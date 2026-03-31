@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    const friends = friendships.map((item) => {
+    const friends = friendships.map((item: any) => {
       const friend = item.senderId === auth.user.id ? item.receiver : item.sender;
 
       return {
