@@ -1,4 +1,5 @@
-import { FriendStatus, type Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
+import { FriendStatus, type FriendStatus as FriendStatusType } from "@/lib/friend-status";
 import { prisma } from "@/lib/prisma";
 import type { FriendStatusView } from "@/lib/types";
 
@@ -33,7 +34,7 @@ export function toFriendStatusView(
     | {
         senderId: string;
         receiverId: string;
-        status: FriendStatus;
+        status: FriendStatusType;
       }
     | null
     | undefined,

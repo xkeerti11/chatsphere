@@ -1,4 +1,4 @@
-import type { FriendStatus } from "@prisma/client";
+import type { FriendStatus } from "@/lib/friend-status";
 
 export type SafeUser = {
   id: string;

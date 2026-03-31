@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server";
-import { FriendStatus } from "@prisma/client";
 import { authenticateRequest, unauthorized } from "@/lib/auth";
 import { ok } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
