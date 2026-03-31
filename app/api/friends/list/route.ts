@@ -1,8 +1,40 @@
+import type { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateRequest, serializeUser, unauthorized } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
+
+const friendUserSelect = {
+  id: true,
+  email: true,
+  username: true,
+  displayName: true,
+  profilePic: true,
+  bio: true,
+  isVerified: true,
+  isOnline: true,
+  lastSeen: true,
+  createdAt: true,
+} satisfies Prisma.UserSelect;
+
+const friendshipInclude = {
+  sender: {
+    select: friendUserSelect,
+  },
+  receiver: {
+    select: friendUserSelect,
+  },
+} satisfies Prisma.FriendRequestInclude;
+
+type FriendshipWithUsers = Prisma.FriendRequestGetPayload<{
+  include: typeof friendshipInclude;
+}>;
+
+type FriendListItem = ReturnType<typeof serializeUser> & {
+  friendshipId: string;
+  friendshipStatus: FriendshipWithUsers["status"];
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,39 +48,10 @@ export async function GET(request: NextRequest) {
           { receiverId: auth.user.id, status: "accepted" },
         ],
       },
-      include: {
-        sender: {
-          select: {
-            id: true,
-            email: true,
-            username: true,
-            displayName: true,
-            profilePic: true,
-            bio: true,
-            isVerified: true,
-            isOnline: true,
-            lastSeen: true,
-            createdAt: true,
-          },
-        },
-        receiver: {
-          select: {
-            id: true,
-            email: true,
-            username: true,
-            displayName: true,
-            profilePic: true,
-            bio: true,
-            isVerified: true,
-            isOnline: true,
-            lastSeen: true,
-            createdAt: true,
-          },
-        },
-      },
+      include: friendshipInclude,
     });
 
-    const friends = friendships.map((item: any) => {
+    const friends = friendships.map((item: FriendshipWithUsers): FriendListItem => {
       const friend = item.senderId === auth.user.id ? item.receiver : item.sender;
 
       return {
@@ -58,7 +61,7 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({
+    return NextResponse.json<{ success: true; friends: FriendListItem[] }>({
       success: true,
       friends,
     });
