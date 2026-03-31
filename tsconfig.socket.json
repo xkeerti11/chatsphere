@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "noEmit": true,
+    "allowJs": false
+  },
+  "include": ["socket-server/**/*.ts", "lib/socket-events.ts"]
+}
