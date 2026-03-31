@@ -1,9 +1,30 @@
-import type { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateRequest, serializeUser, unauthorized } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
+
+type FriendUser = {
+  id: string;
+  email: string;
+  username: string;
+  displayName: string | null;
+  profilePic: string | null;
+  bio: string | null;
+  isVerified: boolean;
+  isOnline: boolean;
+  lastSeen: Date | null;
+  createdAt: Date;
+};
+
+type FriendshipWithUsers = {
+  id: string;
+  senderId: string;
+  receiverId: string;
+  status: "pending" | "accepted" | "rejected";
+  sender: FriendUser;
+  receiver: FriendUser;
+};
 
 const friendUserSelect = {
   id: true,
@@ -16,7 +37,7 @@ const friendUserSelect = {
   isOnline: true,
   lastSeen: true,
   createdAt: true,
-} satisfies Prisma.UserSelect;
+};
 
 const friendshipInclude = {
   sender: {
@@ -25,11 +46,7 @@ const friendshipInclude = {
   receiver: {
     select: friendUserSelect,
   },
-} satisfies Prisma.FriendRequestInclude;
-
-type FriendshipWithUsers = Prisma.FriendRequestGetPayload<{
-  include: typeof friendshipInclude;
-}>;
+};
 
 type FriendListItem = ReturnType<typeof serializeUser> & {
   friendshipId: string;
