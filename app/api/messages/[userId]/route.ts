@@ -6,6 +6,18 @@ import { areFriends } from "@/lib/relations";
 
 export const runtime = "nodejs";
 
+type MessageRecord = {
+  id: string;
+  senderId: string;
+  receiverId: string;
+  text: string | null;
+  fileUrl: string | null;
+  fileType: string | null;
+  isRead: boolean;
+  seenAt: Date | null;
+  createdAt: Date;
+};
+
 export async function GET(request: NextRequest, context: { params: Promise<{ userId: string }> }) {
   const auth = await authenticateRequest(request);
   if ("error" in auth) return unauthorized(auth.error, auth.status);
@@ -37,7 +49,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ use
     }),
   ]);
 
-  const ordered = messages.reverse().map((message) => ({
+  const ordered = messages.reverse().map((message: MessageRecord) => ({
     ...message,
     seenAt: message.seenAt?.toISOString() ?? null,
     createdAt: message.createdAt.toISOString(),
