@@ -1,24 +1,33 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { AuthShell } from "@/components/layout/AuthShell";
 
-export default function LoginPage() {
+function ExpiredMessage() {
   const searchParams = useSearchParams();
-  const expired = searchParams.get("expired");
 
   useEffect(() => {
-    if (expired === "true") {
+    if (searchParams.get("expired") === "true") {
       toast.error("Session expired. Please login again.");
     }
-  }, [expired]);
+  }, [searchParams]);
 
+  return null;
+}
+
+export default function LoginPage() {
   return (
-    <AuthShell title="Welcome back" description="Login to continue your conversations.">
-      <LoginForm />
-    </AuthShell>
+    <>
+      <Suspense fallback={null}>
+        <ExpiredMessage />
+      </Suspense>
+
+      <AuthShell title="Welcome back" description="Login to continue your conversations.">
+        <LoginForm />
+      </AuthShell>
+    </>
   );
 }
