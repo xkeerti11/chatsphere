@@ -62,6 +62,14 @@ io.on("connection", (socket) => {
 
     if (receiverSocketIds) {
       io.to([...receiverSocketIds]).emit("receive_message", message);
+      io.to([...receiverSocketIds]).emit("new_notification", {
+        type: "message",
+        fromUserId: message.senderId,
+        fromUsername: message.senderUsername || "Someone",
+        fromProfilePic: message.senderProfilePic || null,
+        text: message.text ? message.text.substring(0, 50) : "Sent you a file",
+        timestamp: new Date().toISOString(),
+      });
     }
   });
 

@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, LogOut, MessageCircle, Settings, Sparkles } from "lucide-react";
-import { useEffect } from "react";
+import { Bell, Home, LogOut, MessageCircle, Settings, Sparkles } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { useAuthStore } from "@/stores/useAuthStore";
+import { useSocketStore } from "@/stores/useSocketStore";
 
 const navItems = [
   { href: "/", label: "Home", icon: Home },
@@ -61,6 +62,11 @@ export function ProtectedShell({
   const hydrated = useAuthStore((state) => state.hydrated);
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
+  const socket = useSocketStore((state) => state.socket);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const notifRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!hydrated) {
@@ -80,6 +86,40 @@ export function ProtectedShell({
       router.replace("/login");
     }
   }, [hydrated, logout, router, user]);
+
+  useEffect(() => {
+    if (!socket) {
+      return;
+    }
+
+    const handleNotification = (notification: any) => {
+      setNotifications((prev) => [notification, ...prev].slice(0, 20));
+      setUnreadCount((prev) => prev + 1);
+    };
+
+    (socket as any).on("new_notification", handleNotification);
+
+    return () => {
+      (socket as any).off("new_notification", handleNotification);
+    };
+  }, [socket]);
+
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+
+      if (
+        notifRef.current &&
+        !notifRef.current.contains(target) &&
+        !target.closest("[data-notification-toggle='true']")
+      ) {
+        setShowNotifications(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
 
   if (!hydrated || !user) {
     return (
@@ -162,6 +202,23 @@ export function ProtectedShell({
                     Real-time conversations with your circle.
                   </p>
                 </div>
+                <div className="hidden items-center md:flex">
+                  <button
+                    data-notification-toggle="true"
+                    onClick={() => {
+                      setShowNotifications(!showNotifications);
+                      setUnreadCount(0);
+                    }}
+                    className="relative rounded-full p-2 transition-colors hover:bg-gray-100"
+                  >
+                    <Bell className="h-5 w-5 text-gray-600" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-medium text-white">
+                        {unreadCount > 9 ? "9+" : unreadCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
                 <div className="flex items-center md:hidden">
                   <Avatar
                     name={user.displayName ?? user.username}
@@ -177,23 +234,125 @@ export function ProtectedShell({
         </div>
       </div>
 
+      {showNotifications && (
+        <div
+          ref={notifRef}
+          className="fixed inset-x-4 bottom-20 z-50 max-h-96 overflow-y-auto rounded-2xl border bg-white shadow-xl md:inset-x-auto md:right-10 md:top-24 md:w-80 md:bottom-auto"
+        >
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <h3 className="text-sm font-semibold">Notifications</h3>
+            {notifications.length > 0 && (
+              <button
+                onClick={() => setNotifications([])}
+                className="text-xs text-gray-400 hover:text-gray-600"
+              >
+                Clear all
+              </button>
+            )}
+          </div>
+
+          {notifications.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-gray-400">No notifications yet</div>
+          ) : (
+            notifications.map((notif, index) => (
+              <div
+                key={index}
+                onClick={() => {
+                  setShowNotifications(false);
+                  router.push("/chat");
+                }}
+                className="flex cursor-pointer items-start gap-3 border-b px-4 py-3 transition-colors hover:bg-gray-50 last:border-b-0"
+              >
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-purple-100">
+                  {notif.fromProfilePic ? (
+                    <img src={notif.fromProfilePic} className="h-full w-full object-cover" alt="" />
+                  ) : (
+                    <span className="text-sm font-semibold text-purple-600">
+                      {notif.fromUsername?.[0]?.toUpperCase()}
+                    </span>
+                  )}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-gray-900">{notif.fromUsername}</p>
+                  <p className="mt-0.5 truncate text-xs text-gray-500">{notif.text}</p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    {new Date(notif.timestamp).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </p>
+                </div>
+
+                <div className="mt-1 h-2 w-2 flex-shrink-0 rounded-full bg-purple-500" />
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
       <nav className="pb-safe fixed bottom-0 left-0 right-0 z-50 flex border-t bg-white md:hidden">
-        {navItems.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href;
-          return (
-            <Link
-              key={href}
-              href={href}
-              aria-label={label}
-              className={`flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
-                active ? "bg-[var(--brand-soft)] text-[var(--brand)]" : "text-[var(--muted)]"
-              }`}
-            >
-              <Icon size={24} className="h-6 w-6 shrink-0" />
-              <span className="text-[10px] sm:text-xs">{label}</span>
-            </Link>
-          );
-        })}
+        <Link
+          href="/"
+          aria-label="Home"
+          className={`flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
+            pathname === "/" ? "bg-[var(--brand-soft)] text-[var(--brand)]" : "text-[var(--muted)]"
+          }`}
+        >
+          <Home size={24} className="h-6 w-6 shrink-0" />
+          <span className="text-[10px] sm:text-xs">Home</span>
+        </Link>
+        <Link
+          href="/chat"
+          aria-label="Chat"
+          className={`flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
+            pathname === "/chat" ? "bg-[var(--brand-soft)] text-[var(--brand)]" : "text-[var(--muted)]"
+          }`}
+        >
+          <MessageCircle size={24} className="h-6 w-6 shrink-0" />
+          <span className="text-[10px] sm:text-xs">Chat</span>
+        </Link>
+        <button
+          data-notification-toggle="true"
+          type="button"
+          onClick={() => {
+            setShowNotifications(!showNotifications);
+            setUnreadCount(0);
+          }}
+          className="relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 text-[var(--muted)] transition"
+        >
+          <Bell size={24} className="h-6 w-6 shrink-0" />
+          {unreadCount > 0 && (
+            <span className="absolute right-[calc(50%-22px)] top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-medium text-white">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          )}
+          <span className="text-[10px] sm:text-xs">Alerts</span>
+        </button>
+        <Link
+          href="/stories"
+          aria-label="Stories"
+          className={`flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
+            pathname === "/stories"
+              ? "bg-[var(--brand-soft)] text-[var(--brand)]"
+              : "text-[var(--muted)]"
+          }`}
+        >
+          <Sparkles size={24} className="h-6 w-6 shrink-0" />
+          <span className="text-[10px] sm:text-xs">Stories</span>
+        </Link>
+        <Link
+          href="/settings"
+          aria-label="Settings"
+          className={`flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
+            pathname === "/settings"
+              ? "bg-[var(--brand-soft)] text-[var(--brand)]"
+              : "text-[var(--muted)]"
+          }`}
+        >
+          <Settings size={24} className="h-6 w-6 shrink-0" />
+          <span className="text-[10px] sm:text-xs">Settings</span>
+        </Link>
       </nav>
     </div>
   );
