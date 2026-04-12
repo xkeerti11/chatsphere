@@ -1,7 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
+import { Avatar } from "@/components/ui/Avatar";
 import { formatRelativeTime } from "@/lib/utils";
 import type { StoryDto, StoryFeedGroup } from "@/lib/types";
 
@@ -29,33 +31,28 @@ export function StoryViewer({
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const goNextRef = useRef<() => void>(() => {});
-
-  const currentStory = stories[currentIndex];
+  const safeCurrentIndex = clampIndex(currentIndex, stories.length);
+  const currentStory = stories[safeCurrentIndex];
 
   const goNext = useCallback(() => {
-    if (currentIndex < stories.length - 1) {
+    if (safeCurrentIndex < stories.length - 1) {
       setCurrentIndex((prev) => prev + 1);
       setProgress(0);
     } else {
       setTimeout(() => onClose(), 0);
     }
-  }, [currentIndex, onClose, stories.length]);
+  }, [onClose, safeCurrentIndex, stories.length]);
 
   const goPrev = useCallback(() => {
-    if (currentIndex > 0) {
+    if (safeCurrentIndex > 0) {
       setCurrentIndex((prev) => prev - 1);
       setProgress(0);
     }
-  }, [currentIndex]);
+  }, [safeCurrentIndex]);
 
   useEffect(() => {
     goNextRef.current = goNext;
   }, [goNext]);
-
-  useEffect(() => {
-    setCurrentIndex(clampIndex(initialIndex, stories.length));
-    setProgress(0);
-  }, [initialIndex, stories.length]);
 
   useEffect(() => {
     if (!currentStory) return;
@@ -73,7 +70,7 @@ export function StoryViewer({
     }, 100);
 
     return () => window.clearInterval(timer);
-  }, [currentIndex, isPaused]);
+  }, [currentStory, isPaused]);
 
   useEffect(() => {
     const originalOverflow = document.body.style.overflow;
@@ -102,7 +99,7 @@ export function StoryViewer({
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [currentIndex, goNext, goPrev, onClose]);
+  }, [goNext, goPrev, onClose]);
 
   if (!currentStory) return null;
 
@@ -160,11 +157,13 @@ export function StoryViewer({
             playsInline
           />
         ) : (
-          <img
+          <Image
             key={currentStory.id}
             src={currentStory.mediaUrl}
             alt={currentStory.caption || `${storyUserName}'s story`}
-            className="absolute inset-0 w-full h-full object-cover"
+            fill
+            sizes="100vw"
+            className="absolute inset-0 h-full w-full object-cover"
             style={{
               position: "absolute",
               top: 0,
@@ -173,7 +172,6 @@ export function StoryViewer({
               height: "100%",
               objectFit: "cover",
             }}
-            draggable={false}
           />
         )}
 
@@ -201,23 +199,12 @@ export function StoryViewer({
           style={{ marginTop: "env(safe-area-inset-top, 0px)" }}
         >
           <div className="flex min-w-0 items-center">
-            {currentStory.user.profilePic ? (
-              <img
-                src={currentStory.user.profilePic}
-                alt={storyUserName}
-                className="w-9 h-9 rounded-full object-cover border-2 border-white"
-                draggable={false}
-              />
-            ) : (
-              <div className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-white/20 text-xs font-semibold text-white">
-                {storyUserName
-                  .split(" ")
-                  .filter(Boolean)
-                  .slice(0, 2)
-                  .map((value) => value[0]?.toUpperCase())
-                  .join("") || "CS"}
-              </div>
-            )}
+            <Avatar
+              name={storyUserName}
+              src={currentStory.user.profilePic}
+              size="sm"
+              className="h-9 w-9 border-2 border-white"
+            />
             <p className="truncate text-white font-semibold text-sm ml-2">{storyUserName}</p>
             <p className="truncate text-white/70 text-xs ml-1">
               {formatRelativeTime(currentStory.createdAt)}

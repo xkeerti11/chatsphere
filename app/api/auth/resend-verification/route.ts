@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
 import { fail, ok, readJson } from "@/lib/api";
+import { buildAppUrl } from "@/lib/app-url";
 import { generateRandomToken } from "@/lib/auth";
 import { VERIFY_TOKEN_EXPIRY_HOURS } from "@/lib/constants";
-import { getOptionalEnv } from "@/lib/env";
 import { sendVerificationEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 import { resendVerificationSchema } from "@/lib/validations";
@@ -41,11 +41,10 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  const appUrl = getOptionalEnv("NEXT_PUBLIC_APP_URL") ?? "http://localhost:3000";
   await sendVerificationEmail({
     email: user.email,
     username: user.username,
-    verificationUrl: `${appUrl}/verify-email?token=${verifyToken}`,
+    verificationUrl: buildAppUrl(`/verify-email?token=${verifyToken}`, request.headers),
   });
 
   return ok({

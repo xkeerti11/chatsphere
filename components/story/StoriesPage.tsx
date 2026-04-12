@@ -30,7 +30,7 @@ export function StoriesPage() {
   useEffect(() => {
     if (!hydrated || !user) return;
     void loadStoriesOnMount();
-  }, [hydrated, loadStoriesOnMount, user]);
+  }, [hydrated, user]);
 
   return (
     <ProtectedShell title="Stories">

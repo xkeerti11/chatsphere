@@ -1,7 +1,7 @@
 "use client";
 
 import { LoaderCircle, LockKeyhole, Upload, UserRound } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { ProtectedShell } from "@/components/layout/ProtectedShell";
 import { Avatar } from "@/components/ui/Avatar";
@@ -56,7 +56,7 @@ export default function SettingsRoutePage() {
     confirmPassword: "",
   });
 
-  async function loadUser() {
+  const loadUser = useCallback(async () => {
     setLoadingProfile(true);
 
     try {
@@ -69,7 +69,7 @@ export default function SettingsRoutePage() {
     } finally {
       setLoadingProfile(false);
     }
-  }
+  }, [updateUser]);
 
   useEffect(() => {
     if (!hydrated || !storedUser) {
@@ -86,7 +86,7 @@ export default function SettingsRoutePage() {
     loadedUserIdRef.current = storedUser.id;
     setProfileForm(buildProfileForm(storedUser));
     void loadUser();
-  }, [hydrated, storedUser]);
+  }, [hydrated, loadUser, storedUser]);
 
   async function handleProfileSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

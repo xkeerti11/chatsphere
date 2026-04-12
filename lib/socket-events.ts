@@ -1,4 +1,4 @@
-import type { MessageDto } from "@/lib/types";
+import type { AppNotification, MessageDto } from "@/lib/types";
 
 export type TypingPayload = {
   from: string;
@@ -19,6 +19,7 @@ export type JoinPayload = {
 export type ServerToClientEvents = {
   presence_snapshot: (payload: { userIds: string[] }) => void;
   receive_message: (message: MessageDto) => void;
+  new_notification: (payload: AppNotification) => void;
   user_typing: (payload: TypingPayload) => void;
   message_seen: (payload: SeenPayload) => void;
   user_online: (payload: { userId: string }) => void;

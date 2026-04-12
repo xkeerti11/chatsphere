@@ -11,7 +11,7 @@
     "postinstall": "prisma generate",
     "start": "next start",
     "lint": "eslint .",
-    "test": "node --import tsx --test tests/lib/auth.test.ts tests/lib/utils.test.ts tests/lib/validations.test.ts tests/lib/auth-store.test.ts",
+    "test": "node --import tsx --test tests/lib/app-url.test.ts tests/lib/auth.test.ts tests/lib/utils.test.ts tests/lib/validations.test.ts tests/lib/auth-store.test.ts",
     "typecheck": "tsc --noEmit",
     "validate": "npm run lint && npm run typecheck && npm run build:socket"
   },

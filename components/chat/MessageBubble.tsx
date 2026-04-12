@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { CheckCheck } from "lucide-react";
 import { cn, formatRelativeTime } from "@/lib/utils";
@@ -62,9 +63,12 @@ export function MessageBubble({
               role="button"
               tabIndex={0}
             >
-              <img
+              <Image
                 src={imageUrl}
                 alt="Chat attachment"
+                width={192}
+                height={192}
+                sizes="(max-width: 640px) 160px, 192px"
                 className="h-40 w-40 rounded-xl object-cover cursor-pointer transition-opacity hover:opacity-90 sm:h-48 sm:w-48"
               />
             </div>
@@ -107,9 +111,12 @@ export function MessageBubble({
             className="relative max-h-[90vh] max-w-[90vw]"
             onClick={(event) => event.stopPropagation()}
           >
-            <img
+            <Image
               src={lightboxImage}
               alt="Full size"
+              width={1600}
+              height={1600}
+              sizes="90vw"
               className="max-h-[90vh] max-w-full rounded-xl object-contain"
             />
             <button

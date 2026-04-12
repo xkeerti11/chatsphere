@@ -1,5 +1,9 @@
 import bcrypt from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
+import { buildAppUrl } from "@/lib/app-url";
+import { generateRandomToken } from "@/lib/auth";
+import { VERIFY_TOKEN_EXPIRY_HOURS } from "@/lib/constants";
+import { sendVerificationEmail } from "@/lib/email";
 import prisma from "@/lib/prisma";
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -58,16 +62,28 @@ export async function POST(request: NextRequest) {
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    await prisma.user.create({
+    const verifyToken = generateRandomToken();
+    const user = await prisma.user.create({
       data: {
         email,
         username,
         password: hashedPassword,
         isVerified: false,
+        verifyToken,
+        verifyTokenExpiry: new Date(Date.now() + VERIFY_TOKEN_EXPIRY_HOURS * 60 * 60 * 1000),
       },
     });
 
-    return NextResponse.json({ success: true, message: "Account created!" }, { status: 201 });
+    await sendVerificationEmail({
+      email: user.email,
+      username: user.username,
+      verificationUrl: buildAppUrl(`/verify-email?token=${verifyToken}`, request.headers),
+    });
+
+    return NextResponse.json(
+      { success: true, message: "Account created! Check your email to verify your account." },
+      { status: 201 },
+    );
   } catch (error) {
     console.error("Register error:", error);
     return NextResponse.json(

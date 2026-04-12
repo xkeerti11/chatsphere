@@ -101,6 +101,7 @@ export function StoryBar({
       />
       {viewerIndex !== null ? (
         <StoryViewer
+          key={groups[viewerIndex]?.user.id ?? viewerIndex}
           stories={
             groups[viewerIndex]?.stories.map((story) => ({
               ...story,

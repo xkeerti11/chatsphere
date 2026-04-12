@@ -32,6 +32,15 @@ export type MessageDto = {
   createdAt: string;
 };
 
+export type AppNotification = {
+  type: "message";
+  fromUserId: string;
+  fromUsername: string;
+  fromProfilePic: string | null;
+  text: string;
+  timestamp: string;
+};
+
 export type StoryDto = {
   id: string;
   mediaUrl: string;

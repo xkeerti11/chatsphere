@@ -6,6 +6,7 @@ import { Bell, Home, LogOut, MessageCircle, Settings, Sparkles } from "lucide-re
 import { useEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
+import type { AppNotification } from "@/lib/types";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useSocketStore } from "@/stores/useSocketStore";
 
@@ -63,7 +64,7 @@ export function ProtectedShell({
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const socket = useSocketStore((state) => state.socket);
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const notifRef = useRef<HTMLDivElement>(null);
@@ -92,15 +93,15 @@ export function ProtectedShell({
       return;
     }
 
-    const handleNotification = (notification: any) => {
+    const handleNotification = (notification: AppNotification) => {
       setNotifications((prev) => [notification, ...prev].slice(0, 20));
       setUnreadCount((prev) => prev + 1);
     };
 
-    (socket as any).on("new_notification", handleNotification);
+    socket.on("new_notification", handleNotification);
 
     return () => {
-      (socket as any).off("new_notification", handleNotification);
+      socket.off("new_notification", handleNotification);
     };
   }, [socket]);
 
@@ -256,22 +257,19 @@ export function ProtectedShell({
           ) : (
             notifications.map((notif, index) => (
               <div
-                key={index}
+                key={`${notif.timestamp}-${notif.fromUserId}-${index}`}
                 onClick={() => {
                   setShowNotifications(false);
                   router.push("/chat");
                 }}
                 className="flex cursor-pointer items-start gap-3 border-b px-4 py-3 transition-colors hover:bg-gray-50 last:border-b-0"
               >
-                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-purple-100">
-                  {notif.fromProfilePic ? (
-                    <img src={notif.fromProfilePic} className="h-full w-full object-cover" alt="" />
-                  ) : (
-                    <span className="text-sm font-semibold text-purple-600">
-                      {notif.fromUsername?.[0]?.toUpperCase()}
-                    </span>
-                  )}
-                </div>
+                <Avatar
+                  name={notif.fromUsername || "Someone"}
+                  src={notif.fromProfilePic}
+                  size="sm"
+                  className="h-9 w-9 shrink-0"
+                />
 
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-gray-900">{notif.fromUsername}</p>
