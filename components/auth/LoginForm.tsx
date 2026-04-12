@@ -32,9 +32,16 @@ export function LoginForm() {
         throw new Error(data.error ?? "Unable to login");
       }
 
-      setAuth(data.user, data.token);
-      toast.success("Welcome back");
-      router.replace("/");
+      if (data.success && data.token) {
+        localStorage.setItem("token", data.token);
+        localStorage.setItem("user", JSON.stringify(data.user));
+        setAuth(data.user, data.token);
+        toast.success("Welcome back");
+        router.push("/");
+        return;
+      }
+
+      throw new Error(data.error ?? "Login failed");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to login");
     } finally {
