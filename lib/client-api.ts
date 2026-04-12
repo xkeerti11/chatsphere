@@ -35,6 +35,16 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
 
   const data = await response.json();
 
+  if (response.status === 401) {
+    useAuthStore.getState().logout();
+
+    if (typeof window !== "undefined") {
+      window.location.assign("/login?expired=true");
+    }
+
+    throw new Error(data.error ?? "Session expired");
+  }
+
   if (!response.ok) {
     throw new Error(data.error ?? "Request failed");
   }

@@ -6,10 +6,13 @@ const JWT_EXPIRES_IN = () => getEnv("JWT_EXPIRES_IN", "7d");
 
 export type JwtPayload = {
   userId: string;
+  createdAt: number;
+  exp?: number;
+  iat?: number;
 };
 
 export function generateToken(userId: string) {
-  return jwt.sign({ userId }, JWT_SECRET(), {
+  return jwt.sign({ userId, createdAt: Date.now() }, JWT_SECRET(), {
     expiresIn: JWT_EXPIRES_IN() as SignOptions["expiresIn"],
   });
 }

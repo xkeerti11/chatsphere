@@ -31,15 +31,21 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     try {
       const parsed = JSON.parse(raw) as { user: SafeUser; token: string };
+      window.localStorage.setItem("token", parsed.token);
+      window.localStorage.setItem("user", JSON.stringify(parsed.user));
       set({ hydrated: true, user: parsed.user, token: parsed.token });
     } catch {
       window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem("token");
+      window.localStorage.removeItem("user");
       set({ hydrated: true, user: null, token: null });
     }
   },
   setAuth: (user, token) => {
     if (typeof window !== "undefined") {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ user, token }));
+      window.localStorage.setItem("token", token);
+      window.localStorage.setItem("user", JSON.stringify(user));
     }
     set({ hydrated: true, user, token });
   },
@@ -48,6 +54,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const token = useAuthStore.getState().token;
       if (token) {
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ user, token }));
+        window.localStorage.setItem("user", JSON.stringify(user));
       }
     }
     set({ user });
@@ -55,6 +62,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: () => {
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem("token");
+      window.localStorage.removeItem("user");
     }
     set({ hydrated: true, user: null, token: null });
   },

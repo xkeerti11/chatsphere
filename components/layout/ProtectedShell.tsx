@@ -15,6 +15,40 @@ const navItems = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
+function checkTokenExpiry() {
+  if (typeof window === "undefined") return false;
+
+  const token = window.localStorage.getItem("token");
+  if (!token) return false;
+
+  try {
+    const base64Url = token.split(".")[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(window.atob(base64)) as { exp?: number };
+
+    if (!payload.exp) {
+      window.localStorage.removeItem("token");
+      window.localStorage.removeItem("user");
+      return false;
+    }
+
+    const expiryTime = payload.exp * 1000;
+    const now = Date.now();
+
+    if (now > expiryTime) {
+      window.localStorage.removeItem("token");
+      window.localStorage.removeItem("user");
+      return false;
+    }
+
+    return true;
+  } catch {
+    window.localStorage.removeItem("token");
+    window.localStorage.removeItem("user");
+    return false;
+  }
+}
+
 export function ProtectedShell({
   title,
   children,
@@ -29,10 +63,23 @@ export function ProtectedShell({
   const logout = useAuthStore((state) => state.logout);
 
   useEffect(() => {
+    if (!hydrated) {
+      return;
+    }
+
+    const hasToken = typeof window !== "undefined" && Boolean(window.localStorage.getItem("token"));
+    const isValid = checkTokenExpiry();
+
+    if (hasToken && !isValid) {
+      logout();
+      router.push("/login?expired=true");
+      return;
+    }
+
     if (hydrated && !user) {
       router.replace("/login");
     }
-  }, [hydrated, router, user]);
+  }, [hydrated, logout, router, user]);
 
   if (!hydrated || !user) {
     return (
