@@ -58,6 +58,20 @@ export async function GET(request: NextRequest) {
     const auth = await authenticateRequest(request);
     if ("error" in auth) return unauthorized(auth.error, auth.status);
 
+    const blocks = await prisma.block.findMany({
+      where: {
+        OR: [{ blockerId: auth.user.id }, { blockedId: auth.user.id }],
+      },
+      select: {
+        blockerId: true,
+        blockedId: true,
+      },
+    });
+
+    const blockedIds = blocks.map((item) =>
+      item.blockerId === auth.user.id ? item.blockedId : item.blockerId,
+    );
+
     const friendships = await prisma.friendRequest.findMany({
       where: {
         OR: [
@@ -68,15 +82,17 @@ export async function GET(request: NextRequest) {
       include: friendshipInclude,
     });
 
-    const friends = friendships.map((item: FriendshipWithUsers): FriendListItem => {
-      const friend = item.senderId === auth.user.id ? item.receiver : item.sender;
+    const friends = friendships
+      .map((item: FriendshipWithUsers): FriendListItem => {
+        const friend = item.senderId === auth.user.id ? item.receiver : item.sender;
 
-      return {
-        ...serializeUser(friend),
-        friendshipId: item.id,
-        friendshipStatus: item.status,
-      };
-    });
+        return {
+          ...serializeUser(friend),
+          friendshipId: item.id,
+          friendshipStatus: item.status,
+        };
+      })
+      .filter((friend) => !blockedIds.includes(friend.id));
 
     return NextResponse.json<{ success: true; friends: FriendListItem[] }>({
       success: true,

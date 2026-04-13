@@ -48,6 +48,25 @@ export async function POST(request: NextRequest) {
       data: { status: FriendStatus.pending },
     });
 
+    try {
+      const socketServerUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
+      await fetch(`${socketServerUrl}/notify-friend-request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: receiverId,
+          from: {
+            id: auth.user.id,
+            username: auth.user.username,
+            displayName: auth.user.displayName,
+            profilePic: auth.user.profilePic,
+          },
+        }),
+      });
+    } catch (e) {
+      console.log("Socket notify failed:", e);
+    }
+
     return ok(
       {
         success: true,
@@ -65,6 +84,25 @@ export async function POST(request: NextRequest) {
       status: FriendStatus.pending,
     },
   });
+
+  try {
+    const socketServerUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
+    await fetch(`${socketServerUrl}/notify-friend-request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: receiverId,
+        from: {
+          id: auth.user.id,
+          username: auth.user.username,
+          displayName: auth.user.displayName,
+          profilePic: auth.user.profilePic,
+        },
+      }),
+    });
+  } catch (e) {
+    console.log("Socket notify failed:", e);
+  }
 
   return ok(
     {

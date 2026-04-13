@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Bell, Home, LogOut, MessageCircle, Settings, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import toast from "react-hot-toast";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import type { AppNotification } from "@/lib/types";
@@ -67,6 +68,7 @@ export function ProtectedShell({
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const notifRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -96,12 +98,28 @@ export function ProtectedShell({
     const handleNotification = (notification: AppNotification) => {
       setNotifications((prev) => [notification, ...prev].slice(0, 20));
       setUnreadCount((prev) => prev + 1);
+
+      if ((notification.type as string) === "friend_request") {
+        toast(`${notification.fromUsername} sent you a friend request`, {
+          icon: "\u{1F465}",
+          duration: 4000,
+        });
+      }
+    };
+
+    const handleReceiveMessage = () => {
+      const isOnChatPage = window.location.pathname === "/chat";
+      if (!isOnChatPage) {
+        setUnreadMessages((prev) => prev + 1);
+      }
     };
 
     socket.on("new_notification", handleNotification);
+    socket.on("receive_message", handleReceiveMessage);
 
     return () => {
       socket.off("new_notification", handleNotification);
+      socket.off("receive_message", handleReceiveMessage);
     };
   }, [socket]);
 
@@ -164,13 +182,21 @@ export function ProtectedShell({
               <Link
                 key={href}
                 href={href}
+                onClick={href === "/chat" ? () => setUnreadMessages(0) : undefined}
                 className={`flex min-h-[44px] items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition sm:text-base ${
                   active
                     ? "bg-[var(--brand-soft)] text-[var(--brand)]"
                     : "text-[var(--muted)] hover:bg-white hover:text-[var(--foreground)]"
                 }`}
               >
-                <Icon size={20} className="shrink-0" />
+                <div className="relative">
+                  <Icon size={20} className="shrink-0" />
+                  {href === "/chat" && unreadMessages > 0 && (
+                    <span className="absolute -right-2 -top-2 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-medium text-white">
+                      {unreadMessages > 9 ? "9+" : unreadMessages}
+                    </span>
+                  )}
+                </div>
                 <span className="truncate">{label}</span>
               </Link>
             );
@@ -282,7 +308,9 @@ export function ProtectedShell({
                   </p>
                 </div>
 
-                <div className="mt-1 h-2 w-2 flex-shrink-0 rounded-full bg-purple-500" />
+                <span className="mt-1 flex-shrink-0 text-sm">
+                  {(notif.type as string) === "friend_request" ? "\u{1F465}" : "\u{1F4AC}"}
+                </span>
               </div>
             ))
           )}
@@ -300,16 +328,27 @@ export function ProtectedShell({
           <Home size={24} className="h-6 w-6 shrink-0" />
           <span className="text-[10px] sm:text-xs">Home</span>
         </Link>
-        <Link
-          href="/chat"
+        <button
+          type="button"
           aria-label="Chat"
-          className={`flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
+          onClick={() => {
+            setUnreadMessages(0);
+            router.push("/chat");
+          }}
+          className={`relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
             pathname === "/chat" ? "bg-[var(--brand-soft)] text-[var(--brand)]" : "text-[var(--muted)]"
           }`}
         >
-          <MessageCircle size={24} className="h-6 w-6 shrink-0" />
+          <div className="relative">
+            <MessageCircle size={24} className="h-6 w-6 shrink-0" />
+            {unreadMessages > 0 && (
+              <span className="absolute -right-2 -top-2 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-medium text-white">
+                {unreadMessages > 9 ? "9+" : unreadMessages}
+              </span>
+            )}
+          </div>
           <span className="text-[10px] sm:text-xs">Chat</span>
-        </Link>
+        </button>
         <button
           data-notification-toggle="true"
           type="button"

@@ -2,6 +2,42 @@ const { createServer } = require("http");
 const { Server } = require("socket.io");
 
 const httpServer = createServer((request, response) => {
+  if (request.url === "/notify-friend-request" && request.method === "POST") {
+    let body = "";
+
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+
+    request.on("end", () => {
+      try {
+        const { to, from } = JSON.parse(body);
+        const receiverSocketIds = connectedUsers.get(to);
+
+        if (receiverSocketIds) {
+          io.to([...receiverSocketIds]).emit("new_notification", {
+            type: "friend_request",
+            fromUserId: from.id,
+            fromUsername: from.username,
+            fromProfilePic: from.profilePic,
+            text: `${from.username} sent you a friend request`,
+            timestamp: new Date().toISOString(),
+          });
+        }
+
+        response.writeHead(200, {
+          "Content-Type": "application/json",
+        });
+        response.end(JSON.stringify({ ok: true }));
+      } catch (e) {
+        response.writeHead(500);
+        response.end();
+      }
+    });
+
+    return;
+  }
+
   if (request.url === "/health") {
     response.writeHead(200, {
       "Content-Type": "application/json",
