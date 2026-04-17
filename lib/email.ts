@@ -35,8 +35,7 @@ async function sendMail({
 
   if (!transporter) {
     console.info(`[mail-preview] ${subject} -> ${to}`);
-    conso
-    le.info(text);
+    console.info(text);
     console.info(html);
     return;
   }
