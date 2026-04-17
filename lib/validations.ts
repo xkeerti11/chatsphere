@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { UPLOAD_PURPOSES } from "@/lib/constants";
 
+export const PASSWORD_TOO_SHORT_MESSAGE = "ye password small hai";
+export const LOGIN_PASSWORD_INCORRECT_MESSAGE = "ye sahi se daal";
+
 export const registerSchema = z.object({
   email: z.email().transform((value) => value.toLowerCase()),
   username: z
@@ -9,12 +12,12 @@ export const registerSchema = z.object({
     .min(3)
     .max(20)
     .regex(/^[a-zA-Z0-9_]+$/),
-  password: z.string().min(8),
+  password: z.string().min(8, PASSWORD_TOO_SHORT_MESSAGE),
 });
 
 export const loginSchema = z.object({
   email: z.email().transform((value) => value.toLowerCase()),
-  password: z.string().min(8),
+  password: z.string().min(8, PASSWORD_TOO_SHORT_MESSAGE),
 });
 
 export const verifySchema = z.object({
@@ -32,12 +35,12 @@ export const forgotPasswordSchema = z.object({
 export const resetPasswordSchema = z.object({
   email: z.email().transform((value) => value.toLowerCase()),
   otp: z.string().regex(/^\d{6}$/),
-  newPassword: z.string().min(8),
+  newPassword: z.string().min(8, PASSWORD_TOO_SHORT_MESSAGE),
 });
 
 export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(8),
-  newPassword: z.string().min(8),
+  currentPassword: z.string().min(8, PASSWORD_TOO_SHORT_MESSAGE),
+  newPassword: z.string().min(8, PASSWORD_TOO_SHORT_MESSAGE),
 });
 
 export const profileUpdateSchema = z.object({

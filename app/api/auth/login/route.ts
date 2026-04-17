@@ -3,7 +3,7 @@ import { fail, ok, readJson } from "@/lib/api";
 import { generateToken } from "@/lib/jwt";
 import { prisma } from "@/lib/prisma";
 import { serializeUser, verifyPassword } from "@/lib/auth";
-import { loginSchema } from "@/lib/validations";
+import { LOGIN_PASSWORD_INCORRECT_MESSAGE, loginSchema } from "@/lib/validations";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
   });
 
   if (!user) {
-    return fail("Invalid email or password", 401);
+    return fail(LOGIN_PASSWORD_INCORRECT_MESSAGE, 401);
   }
 
   if (!user.isVerified) {
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
   const isValid = await verifyPassword(parsed.data.password, user.password);
 
   if (!isValid) {
-    return fail("Invalid email or password", 401);
+    return fail(LOGIN_PASSWORD_INCORRECT_MESSAGE, 401);
   }
 
   const token = generateToken(user.id);

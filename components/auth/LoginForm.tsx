@@ -7,6 +7,7 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { loginSchema } from "@/lib/validations";
 import { useAuthStore } from "@/stores/useAuthStore";
 
 export function LoginForm() {
@@ -18,13 +19,20 @@ export function LoginForm() {
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const parsed = loginSchema.safeParse(form);
+
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message ?? "Unable to login");
+      return;
+    }
+
     setLoading(true);
 
     try {
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(parsed.data),
       });
       const data = await response.json();
 
