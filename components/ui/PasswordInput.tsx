@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type PasswordInputProps = InputHTMLAttributes<HTMLInputElement>;
+type PasswordInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type">;
 
 export function PasswordInput({
   className,
@@ -20,8 +20,8 @@ export function PasswordInput({
           "min-h-[44px] w-full rounded-2xl border border-[var(--border)] bg-white px-3 py-2.5 pr-12 text-sm outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--brand)] focus:ring-4 focus:ring-indigo-100 sm:px-4 sm:pr-12 sm:text-base",
           className,
         )}
-        type={showPassword ? "text" : "password"}
         {...props}
+        type={showPassword ? "text" : "password"}
       />
       <button
         type="button"
@@ -30,7 +30,7 @@ export function PasswordInput({
         aria-pressed={showPassword}
         onClick={() => setShowPassword((value) => !value)}
       >
-        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+        {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
       </button>
     </div>
   );
