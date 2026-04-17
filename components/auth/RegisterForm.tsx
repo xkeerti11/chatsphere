@@ -7,6 +7,7 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 
 export function RegisterForm() {
   const router = useRouter();
@@ -66,15 +67,13 @@ export function RegisterForm() {
         onChange={(event) => setForm((state) => ({ ...state, email: event.target.value }))}
         required
       />
-      <Input
-        type="password"
+      <PasswordInput
         placeholder="Password"
         value={form.password}
         onChange={(event) => setForm((state) => ({ ...state, password: event.target.value }))}
         required
       />
-      <Input
-        type="password"
+      <PasswordInput
         placeholder="Confirm password"
         value={form.confirmPassword}
         onChange={(event) =>

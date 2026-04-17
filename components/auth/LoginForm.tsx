@@ -2,18 +2,18 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, LoaderCircle } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 import { loginSchema } from "@/lib/validations";
 import { useAuthStore } from "@/stores/useAuthStore";
 
 export function LoginForm() {
   const router = useRouter();
   const setAuth = useAuthStore((state) => state.setAuth);
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ email: "", password: "" });
 
@@ -66,22 +66,12 @@ export function LoginForm() {
         onChange={(event) => setForm((state) => ({ ...state, email: event.target.value }))}
         required
       />
-      <div className="relative">
-        <Input
-          type={showPassword ? "text" : "password"}
-          placeholder="Password"
-          value={form.password}
-          onChange={(event) => setForm((state) => ({ ...state, password: event.target.value }))}
-          required
-        />
-        <button
-          type="button"
-          className="absolute right-4 top-1/2 -translate-y-1/2 text-[var(--muted)]"
-          onClick={() => setShowPassword((value) => !value)}
-        >
-          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-        </button>
-      </div>
+      <PasswordInput
+        placeholder="Password"
+        value={form.password}
+        onChange={(event) => setForm((state) => ({ ...state, password: event.target.value }))}
+        required
+      />
 
       <div className="flex items-center justify-between text-sm text-[var(--muted)]">
         <Link href="/forgot-password" className="text-[var(--brand)]">
