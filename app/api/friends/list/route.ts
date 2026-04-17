@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { authenticateRequest, serializeUser, unauthorized } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -58,32 +59,57 @@ export async function GET(request: NextRequest) {
     const auth = await authenticateRequest(request);
     if ("error" in auth) return unauthorized(auth.error, auth.status);
 
-    const blocks = await prisma.block.findMany({
-      where: {
-        OR: [{ blockerId: auth.user.id }, { blockedId: auth.user.id }],
-      },
-      select: {
-        blockerId: true,
-        blockedId: true,
-      },
-    });
+    let blocks: Array<{ blockerId: string; blockedId: string }> = [];
+    try {
+      blocks = await prisma.block.findMany({
+        where: {
+          OR: [{ blockerId: auth.user.id }, { blockedId: auth.user.id }],
+        },
+        select: {
+          blockerId: true,
+          blockedId: true,
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2021"
+      ) {
+        console.warn("Block model table missing");
+      } else {
+        throw error;
+      }
+    }
 
     const blockedIds = blocks.map((item) =>
       item.blockerId === auth.user.id ? item.blockedId : item.blockerId,
     );
 
-    const friendships = await prisma.friendRequest.findMany({
-      where: {
-        OR: [
-          { senderId: auth.user.id, status: "accepted" },
-          { receiverId: auth.user.id, status: "accepted" },
-        ],
-      },
-      include: friendshipInclude,
-    });
+    let friendships: any[] = [];
+    try {
+      friendships = await prisma.friendRequest.findMany({
+        where: {
+          OR: [
+            { senderId: auth.user.id, status: "accepted" },
+            { receiverId: auth.user.id, status: "accepted" },
+          ],
+        },
+        include: friendshipInclude,
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2021"
+      ) {
+        console.warn("FriendRequest model table missing");
+        return NextResponse.json({ success: true, friends: [] });
+      } else {
+        throw error;
+      }
+    }
 
     const friends = friendships
-      .map((item: FriendshipWithUsers): FriendListItem => {
+      .map((item: any): FriendListItem => {
         const friend = item.senderId === auth.user.id ? item.receiver : item.sender;
 
         return {
@@ -99,12 +125,13 @@ export async function GET(request: NextRequest) {
       friends,
     });
   } catch (error) {
-    console.error("GET /api/friends/list failed", error);
+    console.error("GET /api/friends/list failed:", error);
 
     return NextResponse.json(
       {
         success: false,
-        error: "Unable to load friends",
+        error: "Internal Server Error",
+        details: error instanceof Error ? error.message : String(error)
       },
       { status: 500 },
     );
