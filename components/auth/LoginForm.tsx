@@ -22,7 +22,15 @@ export function LoginForm() {
     const parsed = loginSchema.safeParse(form);
 
     if (!parsed.success) {
-      toast.error(parsed.error.issues[0]?.message ?? "Unable to login");
+      const issue = parsed.error.issues[0];
+      const toastId =
+        issue?.path[0] === "email"
+          ? "login-email-error"
+          : issue?.path[0] === "password"
+            ? "login-password-error"
+            : "login-validation-error";
+
+      toast.error(issue?.message ?? "Unable to login", { id: toastId });
       return;
     }
 
@@ -51,7 +59,9 @@ export function LoginForm() {
 
       throw new Error(data.error ?? "Login failed");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to login");
+      toast.error(error instanceof Error ? error.message : "Unable to login", {
+        id: "login-error",
+      });
     } finally {
       setLoading(false);
     }

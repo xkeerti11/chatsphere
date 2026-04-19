@@ -22,8 +22,23 @@ export function RegisterForm() {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (!form.username || form.username.trim().length < 3) {
+      toast.error("Username must be 3+ characters", { id: "register-username-error" });
+      return;
+    }
+
+    if (!form.email || !form.email.includes("@")) {
+      toast.error("Enter valid email", { id: "register-email-error" });
+      return;
+    }
+
+    if (!form.password || form.password.length < 8) {
+      toast.error("Password must be 8+ characters", { id: "register-password-error" });
+      return;
+    }
+
     if (form.password !== form.confirmPassword) {
-      toast.error("Passwords do not match");
+      toast.error("Passwords do not match", { id: "register-confirm-password-error" });
       return;
     }
 
@@ -40,13 +55,18 @@ export function RegisterForm() {
         }),
       });
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error ?? "Unable to create account");
+
+      if (!response.ok || !data.success) {
+        toast.error(data.error ?? data.message ?? "Unable to create account", {
+          id: "register-error",
+        });
+        return;
       }
-      toast.success(data.message);
+
+      toast.success(data.message, { id: "register-success" });
       router.replace(`/verify-email?email=${encodeURIComponent(form.email)}`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to create account");
+    } catch {
+      toast.error("Network error. Try again.", { id: "register-network-error" });
     } finally {
       setLoading(false);
     }

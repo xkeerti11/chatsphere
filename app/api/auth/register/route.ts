@@ -13,27 +13,39 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
-    const username = typeof body?.username === "string" ? body.username.trim() : "";
+    const rawUsername = typeof body?.username === "string" ? body.username.trim() : "";
+    const username = rawUsername.toLowerCase();
     const password = typeof body?.password === "string" ? body.password : "";
 
-    if (!email || !username || !password) {
+    console.log("Register attempt:", email);
+
+    if (!email || !rawUsername || !password) {
       return NextResponse.json(
-        { success: false, message: "Email, username, and password are required." },
+        {
+          success: false,
+          error: "All fields required",
+          message: "All fields required",
+        },
         { status: 400 },
       );
     }
 
     if (!emailRegex.test(email)) {
       return NextResponse.json(
-        { success: false, message: "Please enter a valid email address." },
+        {
+          success: false,
+          error: "Please enter a valid email address.",
+          message: "Please enter a valid email address.",
+        },
         { status: 400 },
       );
     }
 
-    if (!usernameRegex.test(username)) {
+    if (!usernameRegex.test(rawUsername)) {
       return NextResponse.json(
         {
           success: false,
+          error: "Username must be 3-20 characters and contain only letters, numbers, and underscores.",
           message: "Username must be 3-20 characters and contain only letters, numbers, and underscores.",
         },
         { status: 400 },
@@ -42,7 +54,11 @@ export async function POST(request: NextRequest) {
 
     if (password.length < 8) {
       return NextResponse.json(
-        { success: false, message: "Password must be at least 8 characters long." },
+        {
+          success: false,
+          error: "Password must be 8+ characters",
+          message: "Password must be 8+ characters",
+        },
         { status: 400 },
       );
     }
@@ -54,8 +70,15 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingUser) {
+      const duplicateError =
+        existingUser.email === email ? "Email already registered" : "Username already taken";
+
       return NextResponse.json(
-        { success: false, message: "Email or username already exists." },
+        {
+          success: false,
+          error: duplicateError,
+          message: duplicateError,
+        },
         { status: 409 },
       );
     }
@@ -87,7 +110,11 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Register error:", error);
     return NextResponse.json(
-      { success: false, message: "Internal server error." },
+      {
+        success: false,
+        error: "Unable to create account. Try again.",
+        message: "Unable to create account. Try again.",
+      },
       { status: 500 },
     );
   }
