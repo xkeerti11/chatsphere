@@ -44,11 +44,21 @@ export function LoginForm() {
       });
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error ?? "Unable to login");
+      if (!data.success) {
+        if (data.needsVerification) {
+          toast.error("Email not verified. Check your inbox.", {
+            id: "verify-err",
+            duration: 5000,
+          });
+        } else {
+          toast.error(data.error || "Login failed", {
+            id: "login-err",
+          });
+        }
+        return;
       }
 
-      if (data.success && data.token) {
+      if (response.ok && data.token) {
         localStorage.setItem("token", data.token);
         localStorage.setItem("user", JSON.stringify(data.user));
         setAuth(data.user, data.token);

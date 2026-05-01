@@ -34,9 +34,28 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <Toaster
         position="top-right"
         toastOptions={{
-          className: "!rounded-2xl !border !border-[var(--border)] !bg-white !text-[var(--foreground)] !shadow-xl",
-          success: { iconTheme: { primary: "#19b36a", secondary: "#ffffff" } },
-          error: { iconTheme: { primary: "#ef4444", secondary: "#ffffff" } },
+          duration: 4000,
+          style: {
+            maxWidth: "380px",
+            width: "auto",
+            fontSize: "14px",
+            padding: "12px 16px",
+            zIndex: 99999,
+          },
+          error: {
+            style: {
+              background: "#FEF2F2",
+              color: "#DC2626",
+              border: "1px solid #FECACA",
+            },
+          },
+          success: {
+            style: {
+              background: "#F0FDF4",
+              color: "#16A34A",
+              border: "1px solid #BBF7D0",
+            },
+          },
         }}
       />
     </>

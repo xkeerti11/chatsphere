@@ -1,40 +1,62 @@
-import { NextRequest } from "next/server";
-import { fail, ok, readJson } from "@/lib/api";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifySchema } from "@/lib/validations";
 
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
-  const body = await readJson(request);
-  const parsed = verifySchema.safeParse(body);
+  try {
+    const { email, otp } = await request.json();
 
-  if (!parsed.success) {
-    return fail("Invalid verification token");
+    if (!email || !otp) {
+      return NextResponse.json(
+        { success: false, error: "Email and OTP required" },
+        { status: 400 },
+      );
+    }
+
+    const normalizedEmail = email.toLowerCase();
+
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (!user) {
+      return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
+    }
+
+    if (user.isVerified) {
+      return NextResponse.json({ success: true, message: "Already verified" });
+    }
+
+    if (user.verifyToken !== otp) {
+      return NextResponse.json({ success: false, error: "Invalid OTP" }, { status: 400 });
+    }
+
+    if (!user.verifyTokenExpiry || user.verifyTokenExpiry < new Date()) {
+      return NextResponse.json(
+        { success: false, error: "OTP expired. Request new one." },
+        { status: 400 },
+      );
+    }
+
+    await prisma.user.update({
+      where: { email: normalizedEmail },
+      data: {
+        isVerified: true,
+        verifyToken: null,
+        verifyTokenExpiry: null,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: "Email verified! You can now login.",
+    });
+  } catch (error) {
+    console.error("Verify error:", error);
+    return NextResponse.json(
+      { success: false, error: "Verification failed" },
+      { status: 500 },
+    );
   }
-
-  const user = await prisma.user.findFirst({
-    where: {
-      verifyToken: parsed.data.token,
-      verifyTokenExpiry: { gt: new Date() },
-    },
-  });
-
-  if (!user) {
-    return fail("Invalid or expired verification token");
-  }
-
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      isVerified: true,
-      verifyToken: null,
-      verifyTokenExpiry: null,
-    },
-  });
-
-  return ok({
-    success: true,
-    message: "Email verified successfully! You can now login.",
-  });
 }

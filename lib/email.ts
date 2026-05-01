@@ -145,6 +145,62 @@ This link expires in 24 hours. If you did not create this account, you can ignor
   });
 }
 
+export async function sendOTPEmail(email: string, otp: string) {
+  await sendMail({
+    to: email,
+    subject: `Your ${APP_NAME} verification code`,
+    text: `Your ${APP_NAME} verification code is ${otp}.
+
+This code expires in 10 minutes. Do not share this code with anyone.`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
+        <table width="100%" style="padding:40px 0;">
+          <tr><td align="center">
+            <table width="480" style="background:#fff;border-radius:16px;overflow:hidden;max-width:480px;">
+              <tr>
+                <td style="background:#6C63FF;padding:32px;text-align:center;">
+                  <h1 style="color:#fff;margin:0;font-size:24px;">
+                    ${APP_NAME}
+                  </h1>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:40px 32px;text-align:center;">
+                  <h2 style="color:#111827;margin:0 0 8px;">
+                    Your verification code
+                  </h2>
+                  <p style="color:#6B7280;margin:0 0 32px;font-size:15px;">
+                    Enter this code to verify your email
+                  </p>
+                  <div style="background:#F3F4F6;border-radius:12px;padding:24px;margin:0 0 24px;">
+                    <span style="font-size:40px;font-weight:700;letter-spacing:12px;color:#6C63FF;">
+                      ${otp}
+                    </span>
+                  </div>
+                  <p style="color:#9CA3AF;font-size:13px;margin:0;">
+                    This code expires in <strong>10 minutes</strong>.
+                    Do not share this code with anyone.
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="background:#F9FAFB;padding:20px;text-align:center;">
+                  <p style="color:#9CA3AF;font-size:12px;margin:0;">
+                    If you didn't create an account, ignore this email.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td></tr>
+        </table>
+      </body>
+      </html>
+    `,
+  });
+}
+
 export async function sendResetOtpEmail({
   email,
   otp,

@@ -95,3 +95,9 @@ video {
 .text-balance {
   text-wrap: balance;
 }
+
+[data-sonner-toast] button[data-close-button] {
+  opacity: 1 !important;
+  pointer-events: all !important;
+  cursor: pointer !important;
+}
