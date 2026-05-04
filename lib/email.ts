@@ -224,3 +224,61 @@ This code expires in 10 minutes.`,
     `,
   });
 }
+
+export async function sendResetOTPEmail(email: string, otp: string) {
+  await sendMail({
+    to: email,
+    subject: "Reset your ChatSphere password",
+    text: `Use this code to reset your password: ${otp}
+
+Expires in 10 minutes. Never share this code.`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
+        <table width="100%" style="padding:40px 0;">
+          <tr><td align="center">
+            <table width="480" style="background:#fff;border-radius:16px;overflow:hidden;max-width:480px;">
+              <tr>
+                <td style="background:#EF4444;padding:32px;text-align:center;">
+                  <h1 style="color:#fff;margin:0;font-size:24px;">
+                    ${APP_NAME}
+                  </h1>
+                  <p style="color:#fff;opacity:0.9;margin:8px 0 0;font-size:14px;">
+                    Password Reset
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:40px 32px;text-align:center;">
+                  <h2 style="color:#111827;margin:0 0 8px;">
+                    Reset your password
+                  </h2>
+                  <p style="color:#6B7280;margin:0 0 32px;font-size:15px;">
+                    Use this code to reset your password
+                  </p>
+                  <div style="background:#FEF2F2;border-radius:12px;padding:24px;margin:0 0 24px;border:2px solid #FECACA;">
+                    <span style="font-size:40px;font-weight:700;letter-spacing:12px;color:#EF4444;">
+                      ${otp}
+                    </span>
+                  </div>
+                  <p style="color:#9CA3AF;font-size:13px;margin:0;">
+                    Expires in <strong>10 minutes</strong>. Never share this code.
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="background:#F9FAFB;padding:20px;text-align:center;">
+                  <p style="color:#9CA3AF;font-size:12px;margin:0;">
+                    If you didn't request this, ignore this email.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td></tr>
+        </table>
+      </body>
+      </html>
+    `,
+  });
+}
