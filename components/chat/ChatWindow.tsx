@@ -43,7 +43,7 @@ export function ChatWindow({
     );
   }
 
-  const isOnline = onlineUserIds.includes(selectedFriend.id);
+  const isOnline = selectedFriend.isOnline || onlineUserIds.includes(selectedFriend.id);
 
   return (
     <div className="flex h-full min-h-[65vh] min-w-0 flex-1 flex-col overflow-hidden rounded-[1.25rem] border border-[var(--border)] bg-white">
@@ -76,7 +76,23 @@ export function ChatWindow({
           <MessageBubble key={message.id} currentUserId={currentUserId} message={message} />
         ))}
         {typing ? (
-          <p className="px-3 text-xs text-[var(--muted)] sm:px-4 sm:text-sm">Typing...</p>
+          <div className="flex items-center gap-2 px-4 py-2">
+            <div className="flex gap-1">
+              <span
+                className="h-2 w-2 animate-bounce rounded-full bg-gray-400"
+                style={{ animationDelay: "0ms" }}
+              />
+              <span
+                className="h-2 w-2 animate-bounce rounded-full bg-gray-400"
+                style={{ animationDelay: "150ms" }}
+              />
+              <span
+                className="h-2 w-2 animate-bounce rounded-full bg-gray-400"
+                style={{ animationDelay: "300ms" }}
+              />
+            </div>
+            <span className="text-xs text-gray-400">typing...</span>
+          </div>
         ) : null}
       </div>
 

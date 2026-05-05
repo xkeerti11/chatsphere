@@ -18,7 +18,7 @@ export function ChatSidebar({
   return (
     <div className="space-y-2 sm:space-y-3">
       {friends.map((friend) => {
-        const isOnline = onlineUserIds.includes(friend.id);
+        const isOnline = friend.isOnline || onlineUserIds.includes(friend.id);
 
         return (
           <button
@@ -40,8 +40,8 @@ export function ChatSidebar({
               />
               <span
                 className={cn(
-                  "absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white",
-                  isOnline ? "bg-emerald-500" : "bg-slate-300",
+                  "absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-emerald-500",
+                  isOnline ? "block" : "hidden",
                 )}
               />
             </div>
@@ -54,8 +54,12 @@ export function ChatSidebar({
                   {formatRelativeTime(friend.lastSeen)}
                 </span>
               </div>
-              <p className="truncate text-xs text-gray-500">
-                {isOnline ? "Online now" : "Tap to open chat"}
+              <p className="truncate text-xs">
+                {isOnline ? (
+                  <span className="text-green-500">Online</span>
+                ) : (
+                  <span className="text-gray-400">Offline</span>
+                )}
               </p>
             </div>
           </button>

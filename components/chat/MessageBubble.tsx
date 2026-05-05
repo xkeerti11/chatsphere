@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { CheckCheck } from "lucide-react";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import type { MessageDto } from "@/lib/types";
 
@@ -92,12 +91,19 @@ export function MessageBubble({
           ) : null}
           <div
             className={cn(
-              "mt-1 flex items-center gap-1 text-[10px] opacity-60 sm:text-xs",
+              "mt-1 flex items-center gap-1 text-[10px] sm:text-xs",
               own ? "text-white" : "text-[var(--muted)]",
             )}
           >
-            <span>{formatRelativeTime(message.createdAt)}</span>
-            {own ? <CheckCheck size={12} className={message.isRead ? "text-cyan-200" : ""} /> : null}
+            <span className="opacity-60">{formatRelativeTime(message.createdAt)}</span>
+            {own ? (
+              <span
+                className="ml-1 flex-shrink-0 text-xs"
+                style={{ color: message.isRead ? "#6C63FF" : "#9CA3AF" }}
+              >
+                {"\u2713\u2713"}
+              </span>
+            ) : null}
           </div>
         </div>
       </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { ChatWindow } from "@/components/chat/ChatWindow";
@@ -16,6 +16,7 @@ import { useChatStore } from "@/stores/useChatStore";
 import { useSocketStore } from "@/stores/useSocketStore";
 
 export function ChatWorkspace() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const friendParam = searchParams.get("friend");
   const hydrated = useAuthStore((state) => state.hydrated);
@@ -35,12 +36,19 @@ export function ChatWorkspace() {
   const [typing, setTyping] = useState(false);
   const selectedFriendId = selectedFriend?.id ?? null;
   const loadedFriendsForUserRef = useRef<string | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadFriends = useEffectEvent(async () => {
     try {
       const data = await apiClient.get<{ success: true; friends: FriendListItem[] }>("/api/friends/list");
+      const onlineIds = new Set(onlineUserIds);
 
-      setFriends(data.friends);
+      setFriends(
+        data.friends.map((friend) => ({
+          ...friend,
+          isOnline: isSocketConnected ? onlineIds.has(friend.id) : friend.isOnline,
+        })),
+      );
 
       const chosen =
         data.friends.find((friend) => friend.id === friendParam) ??
@@ -124,6 +132,17 @@ export function ChatWorkspace() {
   const handleReceiveMessage = useEffectEvent((message: MessageDto) => {
     if (message.senderId === selectedFriendId || message.receiverId === selectedFriendId) {
       addMessage(message);
+
+      if (message.senderId === selectedFriendId && currentUserId) {
+        void (async () => {
+          try {
+            await apiClient.put(`/api/messages/seen/${selectedFriendId}`);
+            socket?.emit("seen", { from: currentUserId, to: selectedFriendId, messageId: message.id });
+          } catch {
+            // Keep receiving messages even if the read receipt update fails.
+          }
+        })();
+      }
     }
   });
 
@@ -144,17 +163,53 @@ export function ChatWorkspace() {
     const receiveMessage = (message: MessageDto) => handleReceiveMessage(message);
     const typingListener = (payload: { from: string; isTyping: boolean }) => handleTyping(payload);
     const seenListener = (payload: { from: string }) => handleSeen(payload);
+    const userOnlineListener = ({ userId }: { userId: string }) => {
+      setFriends((currentFriends) =>
+        currentFriends.map((friend) =>
+          friend.id === userId ? { ...friend, isOnline: true } : friend,
+        ),
+      );
+    };
+    const userOfflineListener = ({ userId }: { userId: string }) => {
+      setFriends((currentFriends) =>
+        currentFriends.map((friend) =>
+          friend.id === userId ? { ...friend, isOnline: false } : friend,
+        ),
+      );
+    };
+    const presenceSnapshotListener = ({ userIds }: { userIds: string[] }) => {
+      setFriends((currentFriends) =>
+        currentFriends.map((friend) => ({
+          ...friend,
+          isOnline: userIds.includes(friend.id),
+        })),
+      );
+    };
 
     socket.on("receive_message", receiveMessage);
     socket.on("user_typing", typingListener);
     socket.on("message_seen", seenListener);
+    socket.on("user_online", userOnlineListener);
+    socket.on("user_offline", userOfflineListener);
+    socket.on("presence_snapshot", presenceSnapshotListener);
 
     return () => {
       socket.off("receive_message", receiveMessage);
       socket.off("user_typing", typingListener);
       socket.off("message_seen", seenListener);
+      socket.off("user_online", userOnlineListener);
+      socket.off("user_offline", userOfflineListener);
+      socket.off("presence_snapshot", presenceSnapshotListener);
     };
-  }, [socket]);
+  }, [setFriends, socket]);
+
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   async function sendMessage(payload: { text?: string; fileUrl?: string; fileType?: string }) {
     if (!selectedFriend) return;
@@ -170,11 +225,43 @@ export function ChatWorkspace() {
 
   function handleTypingChange(isTyping: boolean) {
     if (!selectedFriend || !currentUser) return;
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+
     socket?.emit("typing", {
       from: currentUser.id,
       to: selectedFriend.id,
       isTyping,
     });
+
+    if (!isTyping) return;
+
+    typingTimeoutRef.current = setTimeout(() => {
+      socket?.emit("typing", {
+        from: currentUser.id,
+        to: selectedFriend.id,
+        isTyping: false,
+      });
+      typingTimeoutRef.current = null;
+    }, 2000);
+  }
+
+  function handleBack() {
+    if (friendParam) {
+      router.back();
+      return;
+    }
+
+    setTyping(false);
+    setSelectedFriend(null);
+  }
+
+  function handleSelectFriend(friend: FriendListItem) {
+    setTyping(false);
+    setSelectedFriend(friend);
   }
 
   return (
@@ -210,7 +297,7 @@ export function ChatWorkspace() {
                     friends={friends}
                     onlineUserIds={onlineUserIds}
                     selectedFriendId={selectedFriend?.id}
-                    onSelect={setSelectedFriend}
+                    onSelect={handleSelectFriend}
                   />
                 </div>
               )}
@@ -231,7 +318,7 @@ export function ChatWorkspace() {
               onlineUserIds={onlineUserIds}
               messages={messages}
               typing={typing}
-              onBack={() => setSelectedFriend(null)}
+              onBack={handleBack}
               onSend={sendMessage}
               onTypingChange={handleTypingChange}
             />
@@ -243,7 +330,7 @@ export function ChatWorkspace() {
                 onlineUserIds={onlineUserIds}
                 messages={messages}
                 typing={typing}
-                onBack={() => setSelectedFriend(null)}
+                onBack={handleBack}
                 onSend={sendMessage}
                 onTypingChange={handleTypingChange}
               />
