@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { buildAppUrl } from "@/lib/app-url";
-import { generateRandomToken } from "@/lib/auth";
-import { VERIFY_TOKEN_EXPIRY_HOURS } from "@/lib/constants";
-import { sendVerificationEmail } from "@/lib/email";
+import { sendOTPEmail } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -37,34 +34,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const token = generateRandomToken();
-    const expires = new Date(Date.now() + VERIFY_TOKEN_EXPIRY_HOURS * 60 * 60 * 1000);
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
 
-    await prisma.$transaction([
-      prisma.verificationToken.upsert({
-        where: { email: normalizedEmail },
-        update: { token, expires },
-        create: { email: normalizedEmail, token, expires },
-      }),
-      prisma.user.update({
-        where: { id: user.id },
-        data: {
-          verifyToken: token,
-          verifyTokenExpiry: expires,
-        },
-      }),
-    ]);
-
-    await sendVerificationEmail({
-      email: user.email,
-      username: user.username,
-      verificationUrl: buildAppUrl(`/verify-email?token=${token}`, request.headers),
+    await prisma.user.update({
+      where: { email: normalizedEmail },
+      data: {
+        verifyToken: otp,
+        verifyTokenExpiry: otpExpiry,
+      },
     });
+
+    await sendOTPEmail(user.email, otp, user.username);
 
     return NextResponse.json(
       {
         success: true,
-        message: "Verification email sent",
+        message: "New OTP sent to your email",
       },
       { status: 200 },
     );

@@ -96,10 +96,14 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    await sendOTPEmail(user.email, otp);
+    await sendOTPEmail(user.email, otp, user.username);
 
     return NextResponse.json(
-      { success: true, message: "Account created! Check your email to verify your account." },
+      {
+        success: true,
+        message: "OTP sent to your email",
+        redirectTo: `/verify-email?email=${encodeURIComponent(user.email)}`,
+      },
       { status: 201 },
     );
   } catch (error) {
