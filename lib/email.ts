@@ -135,6 +135,7 @@ export async function sendVerificationEmail(_options?: {
   username: string;
   verificationUrl: string;
 }): Promise<void> {
+  void _options;
   throw new Error("Link-based verification emails are disabled. Use sendOTPEmail instead.");
 }
 

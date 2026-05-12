@@ -1,19 +1,52 @@
 "use client";
 
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
-import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { ChatWindow } from "@/components/chat/ChatWindow";
 import { FriendSearch } from "@/components/friends/FriendSearch";
 import { ProtectedShell } from "@/components/layout/ProtectedShell";
+import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { apiClient } from "@/lib/client-api";
 import type { FriendListItem, MessageDto } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, formatRelativeTime } from "@/lib/utils";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useChatStore } from "@/stores/useChatStore";
 import { useSocketStore } from "@/stores/useSocketStore";
+
+type UnreadMessageMap = Record<string, number>;
+
+const CHAT_UNREAD_KEY = "chatsphere:unreadMessagesByFriend";
+const ACTIVE_CHAT_FRIEND_KEY = "chatsphere:activeChatFriendId";
+const CHAT_UNREAD_EVENT = "chatsphere:unreadMessagesChanged";
+
+function readUnreadMessageMap(): UnreadMessageMap {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const value = window.localStorage.getItem(CHAT_UNREAD_KEY);
+    if (!value) return {};
+
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object") return {};
+
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        ([, count]) => typeof count === "number" && count > 0,
+      ),
+    ) as UnreadMessageMap;
+  } catch {
+    return {};
+  }
+}
+
+function writeUnreadMessageMap(unreadMap: UnreadMessageMap) {
+  if (typeof window === "undefined") return;
+
+  window.localStorage.setItem(CHAT_UNREAD_KEY, JSON.stringify(unreadMap));
+  window.dispatchEvent(new CustomEvent(CHAT_UNREAD_EVENT, { detail: unreadMap }));
+}
 
 export function ChatWorkspace() {
   const router = useRouter();
@@ -34,9 +67,21 @@ export function ChatWorkspace() {
   const selectedFriend = useChatStore((state) => state.selectedFriend);
   const setSelectedFriend = useChatStore((state) => state.setSelectedFriend);
   const [typing, setTyping] = useState(false);
+  const [unreadMap, setUnreadMap] = useState<UnreadMessageMap>(() => readUnreadMessageMap());
   const selectedFriendId = selectedFriend?.id ?? null;
   const loadedFriendsForUserRef = useRef<string | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearUnreadForFriend = useCallback((friendId: string) => {
+    setUnreadMap((prev) => {
+      if (!prev[friendId]) return prev;
+
+      const next = { ...prev };
+      delete next[friendId];
+      writeUnreadMessageMap(next);
+      return next;
+    });
+  }, []);
 
   const loadFriends = useEffectEvent(async () => {
     try {
@@ -95,6 +140,45 @@ export function ChatWorkspace() {
   }, [currentUserId, hydrated, isSocketConnected]);
 
   useEffect(() => {
+    if (!socket || !currentUserId || !isSocketConnected) return;
+    socket.emit("join", { userId: currentUserId });
+  }, [currentUserId, isSocketConnected, socket]);
+
+  useEffect(() => {
+    const handleUnreadChanged = (event: Event) => {
+      const nextUnreadMap = (event as CustomEvent<UnreadMessageMap>).detail;
+      setUnreadMap(nextUnreadMap ?? readUnreadMessageMap());
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === CHAT_UNREAD_KEY) {
+        setUnreadMap(readUnreadMessageMap());
+      }
+    };
+
+    window.addEventListener(CHAT_UNREAD_EVENT, handleUnreadChanged);
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.removeEventListener(CHAT_UNREAD_EVENT, handleUnreadChanged);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    if (selectedFriendId) {
+      window.localStorage.setItem(ACTIVE_CHAT_FRIEND_KEY, selectedFriendId);
+    } else {
+      window.localStorage.removeItem(ACTIVE_CHAT_FRIEND_KEY);
+    }
+
+    return () => {
+      window.localStorage.removeItem(ACTIVE_CHAT_FRIEND_KEY);
+    };
+  }, [selectedFriendId]);
+
+  useEffect(() => {
     if (!hydrated || !currentUserId || !selectedFriendId) return;
 
     const userId = currentUserId;
@@ -110,6 +194,7 @@ export function ChatWorkspace() {
         if (cancelled) return;
 
         setMessages(data.messages);
+        clearUnreadForFriend(friendId);
         await apiClient.put(`/api/messages/seen/${friendId}`);
 
         if (!cancelled && socket) {
@@ -127,7 +212,7 @@ export function ChatWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [currentUserId, hydrated, selectedFriendId, setMessages, socket]);
+  }, [clearUnreadForFriend, currentUserId, hydrated, selectedFriendId, setMessages, socket]);
 
   const handleReceiveMessage = useEffectEvent((message: MessageDto) => {
     if (message.senderId === selectedFriendId || message.receiverId === selectedFriendId) {
@@ -261,6 +346,7 @@ export function ChatWorkspace() {
 
   function handleSelectFriend(friend: FriendListItem) {
     setTyping(false);
+    clearUnreadForFriend(friend.id);
     setSelectedFriend(friend);
   }
 
@@ -293,12 +379,69 @@ export function ChatWorkspace() {
                 </div>
               ) : (
                 <div className="min-h-0 flex-1 overflow-y-auto">
-                  <ChatSidebar
-                    friends={friends}
-                    onlineUserIds={onlineUserIds}
-                    selectedFriendId={selectedFriend?.id}
-                    onSelect={handleSelectFriend}
-                  />
+                  <div className="space-y-2 sm:space-y-3">
+                    {friends.map((friend) => {
+                      const isOnline = friend.isOnline || onlineUserIds.includes(friend.id);
+                      const unreadCount = unreadMap[friend.id] ?? 0;
+
+                      return (
+                        <button
+                          key={friend.id}
+                          className={cn(
+                            "relative flex min-h-[44px] w-full items-center gap-3 rounded-xl p-3 text-left transition-colors",
+                            selectedFriendId === friend.id
+                              ? "bg-[var(--brand-soft)]"
+                              : "bg-white hover:bg-gray-50",
+                          )}
+                          onClick={() => handleSelectFriend(friend)}
+                        >
+                          <div className="relative flex-shrink-0">
+                            <Avatar
+                              name={friend.displayName ?? friend.username}
+                              src={friend.profilePic}
+                              size="md"
+                              className="h-10 w-10 sm:h-12 sm:w-12"
+                            />
+                            {isOnline ? (
+                              <span className="absolute bottom-0 right-0 z-10 h-3 w-3 rounded-full border-2 border-white bg-green-500" />
+                            ) : null}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <p
+                                className={cn(
+                                  "truncate text-sm sm:text-base",
+                                  unreadCount > 0
+                                    ? "font-bold text-gray-900"
+                                    : "font-medium text-gray-700",
+                                )}
+                              >
+                                {friend.displayName ?? friend.username}
+                              </p>
+                              {unreadCount > 0 ? (
+                                <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-blue-500 px-1.5 text-xs font-medium text-white">
+                                  {unreadCount > 9 ? "9+" : unreadCount}
+                                </span>
+                              ) : (
+                                <span className="shrink-0 text-[10px] text-[var(--muted)] sm:text-xs">
+                                  {formatRelativeTime(friend.lastSeen)}
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-0.5 truncate text-xs">
+                              {isOnline ? (
+                                <span className="font-medium text-green-500">Online</span>
+                              ) : (
+                                <span className={unreadCount > 0 ? "font-medium text-blue-500" : "text-gray-400"}>
+                                  Offline
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>

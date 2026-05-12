@@ -38,7 +38,7 @@ const friendUserSelect = {
   isOnline: true,
   lastSeen: true,
   createdAt: true,
-};
+} satisfies Prisma.UserSelect;
 
 const friendshipInclude = {
   sender: {
@@ -47,7 +47,11 @@ const friendshipInclude = {
   receiver: {
     select: friendUserSelect,
   },
-};
+} satisfies Prisma.FriendRequestInclude;
+
+type FriendshipResult = Prisma.FriendRequestGetPayload<{
+  include: typeof friendshipInclude;
+}>;
 
 type FriendListItem = ReturnType<typeof serializeUser> & {
   friendshipId: string;
@@ -85,7 +89,7 @@ export async function GET(request: NextRequest) {
       item.blockerId === auth.user.id ? item.blockedId : item.blockerId,
     );
 
-    let friendships: any[] = [];
+    let friendships: FriendshipResult[] = [];
     try {
       friendships = await prisma.friendRequest.findMany({
         where: {
@@ -109,7 +113,7 @@ export async function GET(request: NextRequest) {
     }
 
     const friends = friendships
-      .map((item: any): FriendListItem => {
+      .map((item): FriendListItem => {
         const friend = item.senderId === auth.user.id ? item.receiver : item.sender;
 
         return {

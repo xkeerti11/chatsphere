@@ -7,9 +7,15 @@ import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
-import type { AppNotification } from "@/lib/types";
+import type { AppNotification, MessageDto } from "@/lib/types";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useSocketStore } from "@/stores/useSocketStore";
+
+type UnreadMessageMap = Record<string, number>;
+
+const CHAT_UNREAD_KEY = "chatsphere:unreadMessagesByFriend";
+const ACTIVE_CHAT_FRIEND_KEY = "chatsphere:activeChatFriendId";
+const CHAT_UNREAD_EVENT = "chatsphere:unreadMessagesChanged";
 
 const navItems = [
   { href: "/", label: "Home", icon: Home },
@@ -17,6 +23,40 @@ const navItems = [
   { href: "/stories", label: "Stories", icon: Sparkles },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
+
+function readUnreadMessageMap(): UnreadMessageMap {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const value = window.localStorage.getItem(CHAT_UNREAD_KEY);
+    if (!value) return {};
+
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object") return {};
+
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        ([, count]) => typeof count === "number" && count > 0,
+      ),
+    ) as UnreadMessageMap;
+  } catch {
+    return {};
+  }
+}
+
+function writeUnreadMessageMap(unreadMap: UnreadMessageMap) {
+  if (typeof window === "undefined") return;
+
+  window.localStorage.setItem(CHAT_UNREAD_KEY, JSON.stringify(unreadMap));
+  window.dispatchEvent(new CustomEvent(CHAT_UNREAD_EVENT, { detail: unreadMap }));
+}
+
+function getActiveChatFriendId() {
+  if (typeof window === "undefined") return null;
+
+  const urlFriendId = new URLSearchParams(window.location.search).get("friend");
+  return urlFriendId ?? window.localStorage.getItem(ACTIVE_CHAT_FRIEND_KEY);
+}
 
 function checkTokenExpiry() {
   if (typeof window === "undefined") return false;
@@ -68,8 +108,9 @@ export function ProtectedShell({
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [unreadMessages, setUnreadMessages] = useState(0);
+  const [unreadMap, setUnreadMap] = useState<UnreadMessageMap>(() => readUnreadMessageMap());
   const notifRef = useRef<HTMLDivElement>(null);
+  const totalUnreadMessages = Object.values(unreadMap).reduce((total, count) => total + count, 0);
 
   useEffect(() => {
     if (!hydrated) {
@@ -107,10 +148,20 @@ export function ProtectedShell({
       }
     };
 
-    const handleReceiveMessage = () => {
+    const handleReceiveMessage = (message: MessageDto) => {
       const isOnChatPage = window.location.pathname === "/chat";
-      if (!isOnChatPage) {
-        setUnreadMessages((prev) => prev + 1);
+      const activeFriendId = getActiveChatFriendId();
+
+      if (!isOnChatPage || activeFriendId !== message.senderId) {
+        setUnreadMap((prev) => {
+          const next = {
+            ...prev,
+            [message.senderId]: (prev[message.senderId] ?? 0) + 1,
+          };
+
+          writeUnreadMessageMap(next);
+          return next;
+        });
       }
     };
 
@@ -122,6 +173,26 @@ export function ProtectedShell({
       socket.off("receive_message", handleReceiveMessage);
     };
   }, [socket]);
+
+  useEffect(() => {
+    const handleUnreadChanged = (event: Event) => {
+      const nextUnreadMap = (event as CustomEvent<UnreadMessageMap>).detail;
+      setUnreadMap(nextUnreadMap ?? readUnreadMessageMap());
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === CHAT_UNREAD_KEY) {
+        setUnreadMap(readUnreadMessageMap());
+      }
+    };
+
+    window.addEventListener(CHAT_UNREAD_EVENT, handleUnreadChanged);
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.removeEventListener(CHAT_UNREAD_EVENT, handleUnreadChanged);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
 
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
@@ -182,7 +253,6 @@ export function ProtectedShell({
               <Link
                 key={href}
                 href={href}
-                onClick={href === "/chat" ? () => setUnreadMessages(0) : undefined}
                 className={`flex min-h-[44px] items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition sm:text-base ${
                   active
                     ? "bg-[var(--brand-soft)] text-[var(--brand)]"
@@ -191,9 +261,9 @@ export function ProtectedShell({
               >
                 <div className="relative">
                   <Icon size={20} className="shrink-0" />
-                  {href === "/chat" && unreadMessages > 0 && (
-                    <span className="absolute -right-2 -top-2 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-medium text-white">
-                      {unreadMessages > 9 ? "9+" : unreadMessages}
+                  {href === "/chat" && totalUnreadMessages > 0 && (
+                    <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-medium text-white">
+                      {totalUnreadMessages > 99 ? "99+" : totalUnreadMessages}
                     </span>
                   )}
                 </div>
@@ -332,7 +402,6 @@ export function ProtectedShell({
           type="button"
           aria-label="Chat"
           onClick={() => {
-            setUnreadMessages(0);
             router.push("/chat");
           }}
           className={`relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
@@ -341,9 +410,9 @@ export function ProtectedShell({
         >
           <div className="relative">
             <MessageCircle size={24} className="h-6 w-6 shrink-0" />
-            {unreadMessages > 0 && (
-              <span className="absolute -right-2 -top-2 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-medium text-white">
-                {unreadMessages > 9 ? "9+" : unreadMessages}
+            {totalUnreadMessages > 0 && (
+              <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-medium text-white">
+                {totalUnreadMessages > 99 ? "99+" : totalUnreadMessages}
               </span>
             )}
           </div>
