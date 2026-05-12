@@ -44,6 +44,10 @@ function readUnreadMessageMap(): UnreadMessageMap {
   }
 }
 
+function getUnreadMessageTotal(unreadMap: UnreadMessageMap) {
+  return Object.values(unreadMap).reduce((total, count) => total + count, 0);
+}
+
 function writeUnreadMessageMap(unreadMap: UnreadMessageMap) {
   if (typeof window === "undefined") return;
 
@@ -108,9 +112,11 @@ export function ProtectedShell({
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [unreadMap, setUnreadMap] = useState<UnreadMessageMap>(() => readUnreadMessageMap());
+  const [, setUnreadMap] = useState<UnreadMessageMap>(() => readUnreadMessageMap());
+  const [totalUnreadMessages, setTotalUnreadMessages] = useState(() =>
+    getUnreadMessageTotal(readUnreadMessageMap()),
+  );
   const notifRef = useRef<HTMLDivElement>(null);
-  const totalUnreadMessages = Object.values(unreadMap).reduce((total, count) => total + count, 0);
 
   useEffect(() => {
     if (!hydrated) {
@@ -162,6 +168,7 @@ export function ProtectedShell({
           writeUnreadMessageMap(next);
           return next;
         });
+        setTotalUnreadMessages((prev) => prev + 1);
       }
     };
 
@@ -253,6 +260,7 @@ export function ProtectedShell({
               <Link
                 key={href}
                 href={href}
+                onClick={href === "/chat" ? () => setTotalUnreadMessages(0) : undefined}
                 className={`flex min-h-[44px] items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition sm:text-base ${
                   active
                     ? "bg-[var(--brand-soft)] text-[var(--brand)]"
@@ -356,6 +364,7 @@ export function ProtectedShell({
                 key={`${notif.timestamp}-${notif.fromUserId}-${index}`}
                 onClick={() => {
                   setShowNotifications(false);
+                  setTotalUnreadMessages(0);
                   router.push("/chat");
                 }}
                 className="flex cursor-pointer items-start gap-3 border-b px-4 py-3 transition-colors hover:bg-gray-50 last:border-b-0"
@@ -402,6 +411,7 @@ export function ProtectedShell({
           type="button"
           aria-label="Chat"
           onClick={() => {
+            setTotalUnreadMessages(0);
             router.push("/chat");
           }}
           className={`relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition ${

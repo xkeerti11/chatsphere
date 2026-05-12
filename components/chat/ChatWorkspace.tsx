@@ -140,9 +140,47 @@ export function ChatWorkspace() {
   }, [currentUserId, hydrated, isSocketConnected]);
 
   useEffect(() => {
-    if (!socket || !currentUserId || !isSocketConnected) return;
-    socket.emit("join", { userId: currentUserId });
-  }, [currentUserId, isSocketConnected, socket]);
+    if (!socket || !currentUserId) return;
+
+    const emitJoin = () => {
+      socket.emit("join", { userId: currentUserId });
+    };
+    const presenceSnapshotListener = ({ userIds }: { userIds: string[] }) => {
+      setFriends((currentFriends) =>
+        currentFriends.map((friend) => ({
+          ...friend,
+          isOnline: userIds.includes(friend.id),
+        })),
+      );
+    };
+    const userOnlineListener = ({ userId }: { userId: string }) => {
+      setFriends((currentFriends) =>
+        currentFriends.map((friend) =>
+          friend.id === userId ? { ...friend, isOnline: true } : friend,
+        ),
+      );
+    };
+    const userOfflineListener = ({ userId }: { userId: string }) => {
+      setFriends((currentFriends) =>
+        currentFriends.map((friend) =>
+          friend.id === userId ? { ...friend, isOnline: false } : friend,
+        ),
+      );
+    };
+
+    socket.on("connect", emitJoin);
+    socket.on("presence_snapshot", presenceSnapshotListener);
+    socket.on("user_online", userOnlineListener);
+    socket.on("user_offline", userOfflineListener);
+    emitJoin();
+
+    return () => {
+      socket.off("connect", emitJoin);
+      socket.off("presence_snapshot", presenceSnapshotListener);
+      socket.off("user_online", userOnlineListener);
+      socket.off("user_offline", userOfflineListener);
+    };
+  }, [currentUserId, setFriends, socket]);
 
   useEffect(() => {
     const handleUnreadChanged = (event: Event) => {
@@ -248,45 +286,17 @@ export function ChatWorkspace() {
     const receiveMessage = (message: MessageDto) => handleReceiveMessage(message);
     const typingListener = (payload: { from: string; isTyping: boolean }) => handleTyping(payload);
     const seenListener = (payload: { from: string }) => handleSeen(payload);
-    const userOnlineListener = ({ userId }: { userId: string }) => {
-      setFriends((currentFriends) =>
-        currentFriends.map((friend) =>
-          friend.id === userId ? { ...friend, isOnline: true } : friend,
-        ),
-      );
-    };
-    const userOfflineListener = ({ userId }: { userId: string }) => {
-      setFriends((currentFriends) =>
-        currentFriends.map((friend) =>
-          friend.id === userId ? { ...friend, isOnline: false } : friend,
-        ),
-      );
-    };
-    const presenceSnapshotListener = ({ userIds }: { userIds: string[] }) => {
-      setFriends((currentFriends) =>
-        currentFriends.map((friend) => ({
-          ...friend,
-          isOnline: userIds.includes(friend.id),
-        })),
-      );
-    };
 
     socket.on("receive_message", receiveMessage);
     socket.on("user_typing", typingListener);
     socket.on("message_seen", seenListener);
-    socket.on("user_online", userOnlineListener);
-    socket.on("user_offline", userOfflineListener);
-    socket.on("presence_snapshot", presenceSnapshotListener);
 
     return () => {
       socket.off("receive_message", receiveMessage);
       socket.off("user_typing", typingListener);
       socket.off("message_seen", seenListener);
-      socket.off("user_online", userOnlineListener);
-      socket.off("user_offline", userOfflineListener);
-      socket.off("presence_snapshot", presenceSnapshotListener);
     };
-  }, [setFriends, socket]);
+  }, [socket]);
 
   useEffect(() => {
     return () => {
