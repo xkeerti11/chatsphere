@@ -6,36 +6,19 @@ import type { ClientToServerEvents, ServerToClientEvents } from "@/lib/socket-ev
 
 type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
-async function isSocketServerAvailable() {
-  try {
-    const response = await fetch("/api/socket/health", {
-      cache: "no-store",
-    });
-
-    if (!response.ok) return false;
-
-    const data = (await response.json()) as { available?: boolean };
-    return data.available === true;
-  } catch {
-    return false;
-  }
-}
-
 type SocketState = {
   socket: AppSocket | null;
   isConnected: boolean;
   isConnecting: boolean;
   onlineUserIds: string[];
+  initSocket: (userId: string) => void;
+  disconnectSocket: () => void;
   connect: (userId: string) => void;
   disconnect: () => void;
 };
 
-export const useSocketStore = create<SocketState>((set, get) => ({
-  socket: null,
-  isConnected: false,
-  isConnecting: false,
-  onlineUserIds: [],
-  connect: (userId) => {
+export const useSocketStore = create<SocketState>((set, get) => {
+  const initSocket = (userId: string) => {
     const existingSocket = get().socket;
 
     if (existingSocket) {
@@ -44,68 +27,81 @@ export const useSocketStore = create<SocketState>((set, get) => ({
         return;
       }
 
+      existingSocket.removeAllListeners();
       existingSocket.disconnect();
-      set({ socket: null, isConnected: false, isConnecting: false });
     }
 
-    if (get().isConnecting) return;
+    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://localhost:3001";
 
-    set({ isConnecting: true });
+    const socket = io(socketUrl, {
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+    });
 
-    void (async () => {
-      const isAvailable = await isSocketServerAvailable();
+    set({
+      socket,
+      isConnected: false,
+      isConnecting: true,
+    });
 
-      if (!isAvailable) {
-        set({ isConnecting: false, isConnected: false, socket: null });
-        return;
-      }
+    socket.on("connect", () => {
+      console.log("Socket connected:", socket.id);
+      set({ isConnected: true, isConnecting: false });
+      socket.emit("join", { userId });
+    });
 
-      const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://localhost:3001", {
-        transports: ["websocket"],
-        reconnectionAttempts: 3,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 3000,
-        timeout: 5000,
-      });
+    socket.on("disconnect", () => {
+      console.log("Socket disconnected");
+      set({ isConnected: false, isConnecting: false });
+    });
 
-      socket.on("connect", () => {
-        set({ isConnected: true, isConnecting: false });
-        socket.emit("join", { userId });
-      });
+    socket.on("connect_error", () => {
+      set({ isConnected: false, isConnecting: false });
+    });
 
-      socket.on("presence_snapshot", ({ userIds }) => {
-        set({ onlineUserIds: [...new Set(userIds)] as string[] });
-      });
+    socket.on("presence_snapshot", ({ userIds }: { userIds: string[] }) => {
+      set({ onlineUserIds: [...new Set(userIds)] });
+    });
 
-      socket.on("user_online", ({ userId: onlineUserId }) => {
-        set((state) => ({
-          onlineUserIds: state.onlineUserIds.includes(onlineUserId)
-            ? state.onlineUserIds
-            : [...state.onlineUserIds, onlineUserId],
-        }));
-      });
+    socket.on("user_online", ({ userId: onlineUserId }) => {
+      set((state) => ({
+        onlineUserIds: state.onlineUserIds.includes(onlineUserId)
+          ? state.onlineUserIds
+          : [...state.onlineUserIds, onlineUserId],
+      }));
+    });
 
-      socket.on("user_offline", ({ userId: offlineUserId }) => {
-        set((state) => ({
-          onlineUserIds: state.onlineUserIds.filter((id) => id !== offlineUserId),
-        }));
-      });
+    socket.on("user_offline", ({ userId: offlineUserId }) => {
+      set((state) => ({
+        onlineUserIds: state.onlineUserIds.filter((id) => id !== offlineUserId),
+      }));
+    });
+  };
 
-      socket.on("disconnect", () => {
-        set({ isConnected: false });
-      });
-
-      socket.on("connect_error", () => {
-        socket.disconnect();
-        set({ socket: null, isConnected: false, isConnecting: false, onlineUserIds: [] });
-      });
-
-      set({ socket });
-    })();
-  },
-  disconnect: () => {
+  const disconnectSocket = () => {
     const socket = get().socket;
+
+    socket?.removeAllListeners();
     socket?.disconnect();
-    set({ socket: null, isConnected: false, isConnecting: false, onlineUserIds: [] });
-  },
-}));
+
+    set({
+      socket: null,
+      isConnected: false,
+      isConnecting: false,
+      onlineUserIds: [],
+    });
+  };
+
+  return {
+    socket: null,
+    isConnected: false,
+    isConnecting: false,
+    onlineUserIds: [],
+    initSocket,
+    disconnectSocket,
+    connect: initSocket,
+    disconnect: disconnectSocket,
+  };
+});

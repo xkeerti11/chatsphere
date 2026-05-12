@@ -109,6 +109,7 @@ export function ProtectedShell({
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const socket = useSocketStore((state) => state.socket);
+  const initSocket = useSocketStore((state) => state.initSocket);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -136,6 +137,12 @@ export function ProtectedShell({
       router.replace("/login");
     }
   }, [hydrated, logout, router, user]);
+
+  useEffect(() => {
+    if (hydrated && user?.id) {
+      initSocket(user.id);
+    }
+  }, [hydrated, user?.id, initSocket]);
 
   useEffect(() => {
     if (!socket) {
