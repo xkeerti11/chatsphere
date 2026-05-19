@@ -24,6 +24,23 @@ export type ServerToClientEvents = {
   message_seen: (payload: SeenPayload) => void;
   user_online: (payload: { userId: string }) => void;
   user_offline: (payload: { userId: string }) => void;
+  "call:incoming": (data: {
+    from: string;
+    callerName: string;
+    callerPic?: string;
+    offer: RTCSessionDescriptionInit;
+  }) => void;
+  "call:accepted": (data: {
+    answer: RTCSessionDescriptionInit;
+  }) => void;
+  "call:rejected": () => void;
+  "call:ended": () => void;
+  "call:ice-candidate": (data: {
+    candidate: RTCIceCandidateInit;
+  }) => void;
+  "call:unavailable": (data: {
+    userId: string;
+  }) => void;
 };
 
 export type ClientToServerEvents = {
@@ -31,4 +48,21 @@ export type ClientToServerEvents = {
   send_message: (payload: { to: string; message: MessageDto }) => void;
   typing: (payload: TypingPayload) => void;
   seen: (payload: SeenPayload) => void;
+  "call:initiate": (data: {
+    to: string;
+    from: string;
+    offer: RTCSessionDescriptionInit;
+    callerName: string;
+    callerPic?: string;
+  }) => void;
+  "call:accept": (data: {
+    to: string;
+    answer: RTCSessionDescriptionInit;
+  }) => void;
+  "call:reject": (data: { to: string }) => void;
+  "call:end": (data: { to: string }) => void;
+  "call:ice-candidate": (data: {
+    to: string;
+    candidate: RTCIceCandidateInit;
+  }) => void;
 };

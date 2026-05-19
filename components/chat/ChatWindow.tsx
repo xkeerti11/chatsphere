@@ -1,10 +1,16 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { Phone } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { MessageInput } from "@/components/chat/MessageInput";
+import { useWebRTC } from "@/hooks/useWebRTC";
+import { IncomingCallPopup } from "@/components/call/IncomingCallPopup";
+import { ActiveCallScreen } from "@/components/call/ActiveCallScreen";
+import { useSocketStore } from "@/stores/useSocketStore";
+import { useAuthStore } from "@/stores/useAuthStore";
 import type { FriendListItem, MessageDto } from "@/lib/types";
 
 export function ChatWindow({
@@ -27,10 +33,61 @@ export function ChatWindow({
   onTypingChange: (isTyping: boolean) => void;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
+  const socket = useSocketStore(state => state.socket);
+  const currentUser = useAuthStore(state => state.user);
+
+  const {
+    callState,
+    remoteName,
+    remotePic,
+    incomingCall,
+    isMuted,
+    callDuration,
+    remoteAudioRef,
+    startCall,
+    acceptCall,
+    rejectCall,
+    endCall,
+    toggleMute,
+    handleIncomingCall,
+    handleCallAccepted,
+    handleCallRejected,
+    handleCallEnded,
+    handleIceCandidate,
+    handleUnavailable,
+  } = useWebRTC({
+    socket,
+    currentUserId: currentUser?.id ?? "",
+    currentUserName: currentUser?.displayName 
+      ?? currentUser?.username ?? "",
+    currentUserPic: currentUser?.profilePic ?? undefined,
+  });
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, typing]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    socket.on("call:incoming", handleIncomingCall);
+    socket.on("call:accepted", handleCallAccepted);
+    socket.on("call:rejected", handleCallRejected);
+    socket.on("call:ended", handleCallEnded);
+    socket.on("call:ice-candidate", handleIceCandidate);
+    socket.on("call:unavailable", handleUnavailable);
+
+    return () => {
+      socket.off("call:incoming", handleIncomingCall);
+      socket.off("call:accepted", handleCallAccepted);
+      socket.off("call:rejected", handleCallRejected);
+      socket.off("call:ended", handleCallEnded);
+      socket.off("call:ice-candidate", handleIceCandidate);
+      socket.off("call:unavailable", handleUnavailable);
+    };
+  }, [socket, handleIncomingCall, handleCallAccepted,
+      handleCallRejected, handleCallEnded, 
+      handleIceCandidate, handleUnavailable]);
 
   if (!selectedFriend) {
     return (
@@ -69,6 +126,21 @@ export function ChatWindow({
             {isOnline ? "Online" : "Last seen recently"}
           </p>
         </div>
+        <button
+          onClick={() => selectedFriend && startCall(
+            selectedFriend.id,
+            selectedFriend.displayName ?? selectedFriend.username,
+            selectedFriend.profilePic ?? undefined
+          )}
+          disabled={callState !== "idle" || !selectedFriend}
+          className="p-2 rounded-full hover:bg-gray-100 
+          transition-colors disabled:opacity-40
+          text-gray-600 hover:text-green-600
+          active:scale-95"
+          title="Audio call"
+        >
+          <Phone size={20} />
+        </button>
       </div>
 
       <div ref={listRef} className="flex-1 overflow-y-auto py-3 sm:py-4">
@@ -99,6 +171,32 @@ export function ChatWindow({
       <div className="border-t border-[var(--border)] bg-white p-2 sm:p-3">
         <MessageInput onSend={onSend} onTypingChange={onTypingChange} />
       </div>
+
+      {/* Incoming call popup */}
+      {callState === "incoming" && incomingCall && (
+        <IncomingCallPopup
+          callerName={remoteName}
+          callerPic={remotePic}
+          onAccept={acceptCall}
+          onReject={rejectCall}
+        />
+      )}
+
+      {/* Active call screen */}
+      {(callState === "calling" || 
+        callState === "connected" || 
+        callState === "ended") && (
+        <ActiveCallScreen
+          callState={callState}
+          remoteName={remoteName}
+          remotePic={remotePic}
+          isMuted={isMuted}
+          callDuration={callDuration}
+          onMute={toggleMute}
+          onEnd={endCall}
+          remoteAudioRef={remoteAudioRef}
+        />
+      )}
     </div>
   );
 }
