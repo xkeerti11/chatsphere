@@ -98,6 +98,49 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("call:initiate", ({ to, from, offer, callerName, callerPic }) => {
+    const receiverSocketIds = connectedUsers.get(to);
+    if (receiverSocketIds) {
+      io.to([...receiverSocketIds]).emit("call:incoming", {
+        from,
+        callerName,
+        callerPic,
+        offer,
+      });
+      return;
+    }
+
+    socket.emit("call:unavailable", { userId: to });
+  });
+
+  socket.on("call:accept", ({ to, answer }) => {
+    const callerSocketIds = connectedUsers.get(to);
+    if (callerSocketIds) {
+      io.to([...callerSocketIds]).emit("call:accepted", { answer });
+    }
+  });
+
+  socket.on("call:reject", ({ to }) => {
+    const callerSocketIds = connectedUsers.get(to);
+    if (callerSocketIds) {
+      io.to([...callerSocketIds]).emit("call:rejected");
+    }
+  });
+
+  socket.on("call:end", ({ to }) => {
+    const receiverSocketIds = connectedUsers.get(to);
+    if (receiverSocketIds) {
+      io.to([...receiverSocketIds]).emit("call:ended");
+    }
+  });
+
+  socket.on("call:ice-candidate", ({ to, candidate }) => {
+    const receiverSocketIds = connectedUsers.get(to);
+    if (receiverSocketIds) {
+      io.to([...receiverSocketIds]).emit("call:ice-candidate", { candidate });
+    }
+  });
+
   socket.on("disconnect", async () => {
     const disconnectedUserId = socket.data.userId;
 
