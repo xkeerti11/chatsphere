@@ -129,6 +129,16 @@ export function useWebRTC({
     targetName: string,
     targetPic?: string
   ) => {
+    console.log('Starting call to:', targetUserId)
+    console.log('Socket connected?', socket?.connected)
+    console.log('Socket id:', socket?.id)
+
+    if (!socket?.connected) {
+      console.error('Socket not connected!')
+      alert('Connection issue. Please refresh and try again.')
+      return
+    }
+
     if (!socket || callState !== 'idle') return
 
     try {
@@ -157,6 +167,8 @@ export function useWebRTC({
         callerName: currentUserName,
         callerPic: currentUserPic,
       })
+
+      console.log('call:initiate emitted to:', targetUserId)
 
     } catch (error) {
       console.error('Start call error:', error)
@@ -258,6 +270,8 @@ export function useWebRTC({
 
   // SOCKET EVENT HANDLERS
   const handleIncomingCall = useCallback((data: IncomingCallData) => {
+    console.log('INCOMING CALL RECEIVED:', data)
+
     if (callState !== 'idle') {
       // Already in call - reject automatically
       socket?.emit('call:reject', { to: data.from })

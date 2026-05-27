@@ -9,6 +9,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import type { AppNotification, MessageDto } from "@/lib/types";
 import { useAuthStore } from "@/stores/useAuthStore";
+import { useCallStore } from "@/stores/useCallStore";
 import { useSocketStore } from "@/stores/useSocketStore";
 
 type UnreadMessageMap = Record<string, number>;
@@ -108,6 +109,7 @@ export function ProtectedShell({
   const hydrated = useAuthStore((state) => state.hydrated);
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
+  const setIncomingCallData = useCallStore((state) => state.setIncomingCallData);
   const socket = useSocketStore((state) => state.socket);
   const initSocket = useSocketStore((state) => state.initSocket);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -179,14 +181,21 @@ export function ProtectedShell({
       }
     };
 
+    const handleIncomingCall = (data: Parameters<typeof setIncomingCallData>[0]) => {
+      console.log("Global call:incoming received:", data);
+      setIncomingCallData(data);
+    };
+
     socket.on("new_notification", handleNotification);
     socket.on("receive_message", handleReceiveMessage);
+    socket.on("call:incoming", handleIncomingCall);
 
     return () => {
       socket.off("new_notification", handleNotification);
       socket.off("receive_message", handleReceiveMessage);
+      socket.off("call:incoming", handleIncomingCall);
     };
-  }, [socket]);
+  }, [setIncomingCallData, socket]);
 
   useEffect(() => {
     const handleUnreadChanged = (event: Event) => {
