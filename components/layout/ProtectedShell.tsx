@@ -7,6 +7,9 @@ import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
+import { ActiveCallScreen } from "@/components/call/ActiveCallScreen";
+import { IncomingCallPopup } from "@/components/call/IncomingCallPopup";
+import { useWebRTC } from "@/hooks/useWebRTC";
 import type { AppNotification, MessageDto } from "@/lib/types";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { useCallStore } from "@/stores/useCallStore";
@@ -109,9 +112,32 @@ export function ProtectedShell({
   const hydrated = useAuthStore((state) => state.hydrated);
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
-  const setIncomingCallData = useCallStore((state) => state.setIncomingCallData);
+  const incomingCall = useCallStore((state) => state.incomingCall);
+  const shouldAcceptIncomingCall = useCallStore((state) => state.shouldAcceptIncomingCall);
+  const setIncomingCall = useCallStore((state) => state.setIncomingCall);
+  const acceptIncomingCall = useCallStore((state) => state.acceptIncomingCall);
+  const clearIncomingCall = useCallStore((state) => state.clearIncomingCall);
   const socket = useSocketStore((state) => state.socket);
   const initSocket = useSocketStore((state) => state.initSocket);
+  const {
+    callState: globalCallState,
+    remoteName: globalRemoteName,
+    remotePic: globalRemotePic,
+    isMuted: globalIsMuted,
+    callDuration: globalCallDuration,
+    remoteAudioRef: globalRemoteAudioRef,
+    acceptCall: acceptGlobalCall,
+    endCall: endGlobalCall,
+    toggleMute: toggleGlobalMute,
+    handleIncomingCall: handleGlobalIncomingCall,
+    handleCallEnded: handleGlobalCallEnded,
+    handleIceCandidate: handleGlobalIceCandidate,
+  } = useWebRTC({
+    socket,
+    currentUserId: user?.id ?? "",
+    currentUserName: user?.displayName ?? user?.username ?? "",
+    currentUserPic: user?.profilePic ?? undefined,
+  });
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -181,9 +207,13 @@ export function ProtectedShell({
       }
     };
 
-    const handleIncomingCall = (data: Parameters<typeof setIncomingCallData>[0]) => {
+    const handleIncomingCall = (data: Parameters<typeof setIncomingCall>[0]) => {
+      if (window.location.pathname === "/chat") {
+        return;
+      }
+
       console.log("Global call:incoming received:", data);
-      setIncomingCallData(data);
+      setIncomingCall(data);
     };
 
     socket.on("new_notification", handleNotification);
@@ -195,7 +225,49 @@ export function ProtectedShell({
       socket.off("receive_message", handleReceiveMessage);
       socket.off("call:incoming", handleIncomingCall);
     };
-  }, [setIncomingCallData, socket]);
+  }, [setIncomingCall, socket]);
+
+  useEffect(() => {
+    if (
+      pathname !== "/chat" ||
+      !incomingCall ||
+      !shouldAcceptIncomingCall ||
+      globalCallState !== "idle"
+    ) {
+      return;
+    }
+
+    handleGlobalIncomingCall(incomingCall);
+  }, [
+    pathname,
+    incomingCall,
+    shouldAcceptIncomingCall,
+    globalCallState,
+    handleGlobalIncomingCall,
+  ]);
+
+  useEffect(() => {
+    if (!shouldAcceptIncomingCall || globalCallState !== "incoming") {
+      return;
+    }
+
+    clearIncomingCall();
+    void acceptGlobalCall();
+  }, [acceptGlobalCall, clearIncomingCall, globalCallState, shouldAcceptIncomingCall]);
+
+  useEffect(() => {
+    if (!socket || globalCallState === "idle") {
+      return;
+    }
+
+    socket.on("call:ended", handleGlobalCallEnded);
+    socket.on("call:ice-candidate", handleGlobalIceCandidate);
+
+    return () => {
+      socket.off("call:ended", handleGlobalCallEnded);
+      socket.off("call:ice-candidate", handleGlobalIceCandidate);
+    };
+  }, [globalCallState, handleGlobalCallEnded, handleGlobalIceCandidate, socket]);
 
   useEffect(() => {
     const handleUnreadChanged = (event: Event) => {
@@ -354,6 +426,34 @@ export function ProtectedShell({
           </main>
         </div>
       </div>
+
+      {incomingCall && (
+        <IncomingCallPopup
+          callerName={incomingCall.callerName}
+          callerPic={incomingCall.callerPic}
+          onAccept={() => {
+            acceptIncomingCall();
+            router.push(`/chat?friend=${encodeURIComponent(incomingCall.from)}&call=incoming`);
+          }}
+          onReject={() => {
+            socket?.emit("call:reject", { to: incomingCall.from });
+            clearIncomingCall();
+          }}
+        />
+      )}
+
+      {(globalCallState === "connected" || globalCallState === "ended") && (
+        <ActiveCallScreen
+          callState={globalCallState}
+          remoteName={globalRemoteName}
+          remotePic={globalRemotePic}
+          isMuted={globalIsMuted}
+          callDuration={globalCallDuration}
+          onMute={toggleGlobalMute}
+          onEnd={endGlobalCall}
+          remoteAudioRef={globalRemoteAudioRef}
+        />
+      )}
 
       {showNotifications && (
         <div
