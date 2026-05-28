@@ -68,36 +68,32 @@ io.on("connection", (socket) => {
   socket.on("join", ({ userId }) => {
     if (!userId) return;
 
-    if (socket.userId && socket.userId !== userId) {
-      const previousSockets = connectedUsers.get(socket.userId);
+    connectedUsers.delete(userId);
 
-      if (previousSockets) {
-        previousSockets.delete(socket.id);
-        if (previousSockets.size === 0) {
-          connectedUsers.delete(socket.userId);
-          io.emit("user_offline", { userId: socket.userId });
-        }
-      }
-    }
-
-    const userSockets = connectedUsers.get(userId) || new Set();
-    const wasOffline = userSockets.size === 0;
+    const userSockets = new Set();
     userSockets.add(socket.id);
     connectedUsers.set(userId, userSockets);
     socket.userId = userId;
-    socket.emit("presence_snapshot", { userIds: getOnlineUserIds() });
 
-    if (wasOffline) {
-      socket.broadcast.emit("user_online", { userId });
-    }
+    socket.emit("presence_snapshot", {
+      userIds: Array.from(connectedUsers.keys()),
+    });
 
-    console.log(`User joined: ${userId}`);
+    socket.broadcast.emit("user_online", { userId });
+
+    console.log(`User joined: ${userId}, socketId: ${socket.id}`);
+    console.log(`Total online users: ${connectedUsers.size}`);
   });
 
   socket.on("send_message", ({ to, message }) => {
     const receiverSocketIds = connectedUsers.get(to);
 
-    if (receiverSocketIds) {
+    console.log(
+      `Sending to ${to}, socketIds:`,
+      receiverSocketIds ? [...receiverSocketIds] : "NOT FOUND"
+    );
+
+    if (receiverSocketIds && receiverSocketIds.size > 0) {
       io.to([...receiverSocketIds]).emit("receive_message", message);
       io.to([...receiverSocketIds]).emit("new_notification", {
         type: "message",
@@ -131,16 +127,26 @@ io.on("connection", (socket) => {
   // Step 1: Caller initiates call
   socket.on("call:initiate", ({ to, from, offer, callerName, callerPic }) => {
     const receiverSocketIds = connectedUsers.get(to);
-    if (receiverSocketIds) {
+
+    console.log(`Call from ${from} to ${to}`);
+    console.log(
+      "Receiver socket IDs:",
+      receiverSocketIds ? [...receiverSocketIds] : "NOT FOUND"
+    );
+    console.log("All online users:", Array.from(connectedUsers.keys()));
+
+    if (receiverSocketIds && receiverSocketIds.size > 0) {
       io.to([...receiverSocketIds]).emit("call:incoming", {
         from,
         callerName,
         callerPic,
         offer,
       });
+      console.log(`call:incoming emitted to ${to}`);
     } else {
       // Receiver offline
       socket.emit("call:unavailable", { userId: to });
+      console.log(`User ${to} not found in connectedUsers`);
     }
   });
 
@@ -179,19 +185,18 @@ io.on("connection", (socket) => {
   // ─────────────────────────────────────────────────
 
   socket.on("disconnect", () => {
-    const disconnectedUserId = socket.userId;
+    const userId = socket.userId;
 
-    if (disconnectedUserId) {
-      const userSockets = connectedUsers.get(disconnectedUserId);
-      if (userSockets) {
-        userSockets.delete(socket.id);
-        if (userSockets.size === 0) {
-          connectedUsers.delete(disconnectedUserId);
-          io.emit("user_offline", { userId: disconnectedUserId });
-        }
+    if (!userId) return;
+
+    const userSockets = connectedUsers.get(userId);
+    if (userSockets) {
+      userSockets.delete(socket.id);
+      if (userSockets.size === 0) {
+        connectedUsers.delete(userId);
+        io.emit("user_offline", { userId });
+        console.log(`User offline: ${userId}`);
       }
-
-      console.log(`User disconnected: ${disconnectedUserId}`);
     }
   });
 });
