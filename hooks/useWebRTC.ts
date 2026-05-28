@@ -1,5 +1,5 @@
 'use client'
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 import { Socket } from 'socket.io-client'
 
 export type CallState = 
@@ -68,6 +68,12 @@ export function useWebRTC({
   const localStreamRef = useRef<MediaStream | null>(null)
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null)
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const callStateRef = useRef<CallState>('idle')
+  const retryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    callStateRef.current = callState
+  }, [callState])
 
   const createPeerConnection = useCallback((targetUserId: string) => {
     const peer = new RTCPeerConnection(ICE_SERVERS)
@@ -168,6 +174,32 @@ export function useWebRTC({
         callerPic: currentUserPic,
       })
 
+      let retryCount = 0
+      const maxRetries = 3
+
+      const retryInterval = setInterval(() => {
+        if (retryCount >= maxRetries) {
+          clearInterval(retryInterval)
+          return
+        }
+
+        if (callStateRef.current === 'calling') {
+          console.log('Retrying call:initiate, attempt:', retryCount + 1)
+          socket.emit('call:initiate', {
+            to: targetUserId,
+            from: currentUserId,
+            offer,
+            callerName: currentUserName,
+            callerPic: currentUserPic,
+          })
+          retryCount++
+        } else {
+          clearInterval(retryInterval)
+        }
+      }, 3000)
+
+      retryIntervalRef.current = retryInterval
+
       console.log('call:initiate emitted to:', targetUserId)
 
     } catch (error) {
@@ -262,6 +294,10 @@ export function useWebRTC({
     if (durationIntervalRef.current) {
       clearInterval(durationIntervalRef.current)
       durationIntervalRef.current = null
+    }
+    if (retryIntervalRef.current) {
+      clearInterval(retryIntervalRef.current)
+      retryIntervalRef.current = null
     }
     setRemoteUserId(null)
     setCallDuration(0)
