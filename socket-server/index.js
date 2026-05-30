@@ -70,9 +70,8 @@ io.on("connection", (socket) => {
 
     connectedUsers.delete(userId);
 
-    const userSockets = new Set();
-    userSockets.add(socket.id);
-    connectedUsers.set(userId, userSockets);
+    const freshSet = new Set([socket.id]);
+    connectedUsers.set(userId, freshSet);
     socket.userId = userId;
 
     socket.emit("presence_snapshot", {
@@ -81,8 +80,9 @@ io.on("connection", (socket) => {
 
     socket.broadcast.emit("user_online", { userId });
 
-    console.log(`User joined: ${userId}, socketId: ${socket.id}`);
-    console.log(`Total online users: ${connectedUsers.size}`);
+    console.log(`JOIN: ${userId} -> socketId: ${socket.id}`);
+    console.log(`Total users: ${connectedUsers.size}`);
+    console.log("All users:", Array.from(connectedUsers.keys()));
   });
 
   socket.on("send_message", ({ to, message }) => {
@@ -126,59 +126,64 @@ io.on("connection", (socket) => {
 
   // Step 1: Caller initiates call
   socket.on("call:initiate", ({ to, from, offer, callerName, callerPic }) => {
-    const receiverSocketIds = connectedUsers.get(to);
-
-    console.log(`Call from ${from} to ${to}`);
+    console.log(`CALL: ${from} -> ${to}`);
     console.log(
-      "Receiver socket IDs:",
-      receiverSocketIds ? [...receiverSocketIds] : "NOT FOUND"
+      "connectedUsers:",
+      JSON.stringify(
+        Array.from(connectedUsers.entries()).map(([userId, sockets]) => ({
+          userId,
+          sockets: [...sockets],
+        }))
+      )
     );
-    console.log("All online users:", Array.from(connectedUsers.keys()));
 
-    if (receiverSocketIds && receiverSocketIds.size > 0) {
-      io.to([...receiverSocketIds]).emit("call:incoming", {
-        from,
-        callerName,
-        callerPic,
-        offer,
-      });
-      console.log(`call:incoming emitted to ${to}`);
-    } else {
-      // Receiver offline
+    const receiverSockets = connectedUsers.get(to);
+
+    if (!receiverSockets || receiverSockets.size === 0) {
+      console.log(`CALL FAILED: ${to} not found`);
       socket.emit("call:unavailable", { userId: to });
-      console.log(`User ${to} not found in connectedUsers`);
+      return;
     }
+
+    console.log("CALL SENDING to sockets:", [...receiverSockets]);
+    io.to([...receiverSockets]).emit("call:incoming", {
+      from,
+      callerName,
+      callerPic,
+      offer,
+    });
+    console.log(`CALL SENT to ${to}`);
   });
 
   // Step 2: Receiver accepts call
   socket.on("call:accept", ({ to, answer }) => {
-    const callerSocketIds = connectedUsers.get(to);
-    if (callerSocketIds) {
-      io.to([...callerSocketIds]).emit("call:accepted", { answer });
+    const sockets = connectedUsers.get(to);
+    if (sockets) {
+      io.to([...sockets]).emit("call:accepted", { answer });
     }
   });
 
   // Step 3: Receiver rejects call
   socket.on("call:reject", ({ to }) => {
-    const callerSocketIds = connectedUsers.get(to);
-    if (callerSocketIds) {
-      io.to([...callerSocketIds]).emit("call:rejected");
+    const sockets = connectedUsers.get(to);
+    if (sockets) {
+      io.to([...sockets]).emit("call:rejected");
     }
   });
 
   // Step 4: ICE candidates exchange
   socket.on("call:ice-candidate", ({ to, candidate }) => {
-    const receiverSocketIds = connectedUsers.get(to);
-    if (receiverSocketIds) {
-      io.to([...receiverSocketIds]).emit("call:ice-candidate", { candidate });
+    const sockets = connectedUsers.get(to);
+    if (sockets) {
+      io.to([...sockets]).emit("call:ice-candidate", { candidate });
     }
   });
 
   // Step 5: End call
   socket.on("call:end", ({ to }) => {
-    const receiverSocketIds = connectedUsers.get(to);
-    if (receiverSocketIds) {
-      io.to([...receiverSocketIds]).emit("call:ended");
+    const sockets = connectedUsers.get(to);
+    if (sockets) {
+      io.to([...sockets]).emit("call:ended");
     }
   });
 
