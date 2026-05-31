@@ -107,14 +107,23 @@ export function useWebRTC({
     }
 
     peer.onconnectionstatechange = () => {
+      console.log('Connection state:', peer.connectionState)
+
       if (peer.connectionState === 'connected') {
         setCallState('connected')
-        setCallDuration(0)
         callStartTimeRef.current = Date.now()
+        setCallDuration(0)
       }
-      if (
-        peer.connectionState === 'failed'
-      ) {
+
+      if (peer.connectionState === 'disconnected') {
+        setTimeout(() => {
+          if (peer.iceConnectionState === 'disconnected') {
+            peer.restartIce()
+          }
+        }, 3000)
+      }
+
+      if (peer.connectionState === 'failed') {
         endCall()
       }
     }
@@ -258,8 +267,7 @@ export function useWebRTC({
     try {
       const { from, offer } = incomingCall
       setRemoteUserId(from)
-      setCallState('connected')
-      callStartTimeRef.current = Date.now()
+      setCallState('calling')
 
       const stream = await getLocalStream()
       const peer = createPeerConnection(from)
@@ -393,9 +401,15 @@ export function useWebRTC({
   }, [cleanupCall])
 
   useEffect(() => {
-    if (callState !== 'connected') return
+    if (callState !== 'connected') {
+      return
+    }
 
-    callStartTimeRef.current = Date.now()
+    if (!callStartTimeRef.current) {
+      callStartTimeRef.current = Date.now()
+    }
+
+    setCallDuration(0)
 
     const timer = setInterval(() => {
       if (callStartTimeRef.current) {
@@ -408,7 +422,6 @@ export function useWebRTC({
 
     return () => {
       clearInterval(timer)
-      callStartTimeRef.current = null
     }
   }, [callState])
 
