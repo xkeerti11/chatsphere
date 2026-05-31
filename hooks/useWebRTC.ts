@@ -69,11 +69,48 @@ export function useWebRTC({
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null)
   const callStartTimeRef = useRef<number | null>(null)
   const callStateRef = useRef<CallState>('idle')
+  const remoteUserIdRef = useRef<string | null>(null)
   const retryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     callStateRef.current = callState
   }, [callState])
+
+  useEffect(() => {
+    remoteUserIdRef.current = remoteUserId
+  }, [remoteUserId])
+
+  // CLEANUP
+  const cleanupCall = useCallback(() => {
+    localStreamRef.current?.getTracks().forEach(t => t.stop())
+    localStreamRef.current = null
+    peerRef.current?.close()
+    peerRef.current = null
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = null
+    }
+    callStartTimeRef.current = null
+    if (retryIntervalRef.current) {
+      clearInterval(retryIntervalRef.current)
+      retryIntervalRef.current = null
+    }
+    remoteUserIdRef.current = null
+    setRemoteUserId(null)
+    setCallDuration(0)
+    setIsMuted(false)
+  }, [])
+
+  // END CALL
+  const endCall = useCallback(() => {
+    const activeRemoteUserId = remoteUserIdRef.current
+
+    if (socket && activeRemoteUserId) {
+      socket.emit('call:end', { to: activeRemoteUserId })
+    }
+    cleanupCall()
+    setCallState('ended')
+    setTimeout(() => setCallState('idle'), 2000)
+  }, [socket, cleanupCall])
 
   const createPeerConnection = useCallback((targetUserId: string) => {
     const peer = new RTCPeerConnection(ICE_SERVERS)
@@ -107,42 +144,47 @@ export function useWebRTC({
     }
 
     peer.onconnectionstatechange = () => {
-      console.log('Connection state:', peer.connectionState)
+      const state = peer.connectionState
+      console.log('Peer connection state:', state)
 
-      if (peer.connectionState === 'connected') {
+      if (state === 'connected') {
         setCallState('connected')
-        callStartTimeRef.current = Date.now()
-        setCallDuration(0)
+        if (!callStartTimeRef.current) {
+          callStartTimeRef.current = Date.now()
+          setCallDuration(0)
+        }
       }
 
-      if (peer.connectionState === 'disconnected') {
+      if (state === 'disconnected') {
         setTimeout(() => {
-          if (peer.iceConnectionState === 'disconnected') {
-            peer.restartIce()
+          if (peerRef.current?.connectionState === 'disconnected') {
+            peerRef.current.restartIce()
           }
         }, 3000)
       }
 
-      if (peer.connectionState === 'failed') {
+      if (state === 'failed') {
+        console.log('Connection failed - ending call')
         endCall()
       }
     }
 
     peer.oniceconnectionstatechange = () => {
-      console.log('ICE state:', peer.iceConnectionState)
+      const iceState = peer.iceConnectionState
+      console.log('ICE state:', iceState)
 
-      if (peer.iceConnectionState === 'disconnected') {
-        setTimeout(() => {
-          if (peer.iceConnectionState === 'disconnected') {
-            console.log('ICE disconnected - attempting restart')
-            peer.restartIce()
-          }
-        }, 3000)
+      if (iceState === 'connected' || iceState === 'completed') {
+        setCallState(prev => 
+          prev === 'calling' ? 'connected' : prev
+        )
+        if (!callStartTimeRef.current) {
+          callStartTimeRef.current = Date.now()
+          setCallDuration(0)
+        }
       }
 
-      if (peer.iceConnectionState === 'failed') {
-        console.log('ICE failed - ending call')
-        endCall()
+      if (iceState === 'failed') {
+        peerRef.current?.restartIce()
       }
     }
 
@@ -151,7 +193,7 @@ export function useWebRTC({
     }
 
     return peer
-  }, [socket])
+  }, [socket, endCall])
 
   const getLocalStream = async () => {
     const constraints: MediaStreamConstraints = {
@@ -170,7 +212,7 @@ export function useWebRTC({
         .getUserMedia(constraints)
       localStreamRef.current = stream
       return stream
-    } catch (err) {
+    } catch {
       console.log('Trying basic audio constraints...')
       const stream = await navigator.mediaDevices
         .getUserMedia({ audio: true, video: false })
@@ -199,6 +241,7 @@ export function useWebRTC({
 
     try {
       setCallState('calling')
+      remoteUserIdRef.current = targetUserId
       setRemoteUserId(targetUserId)
       setRemoteName(targetName)
       setRemotePic(targetPic)
@@ -207,13 +250,15 @@ export function useWebRTC({
       const peer = createPeerConnection(targetUserId)
       peerRef.current = peer
 
-      // Add local audio tracks
+      // Add local audio tracks before creating the offer.
       stream.getTracks().forEach(track => {
         peer.addTrack(track, stream)
       })
 
-      // Create offer
-      const offer = await peer.createOffer()
+      const offer = await peer.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: false,
+      })
       await peer.setLocalDescription(offer)
 
       socket.emit('call:initiate', {
@@ -258,7 +303,16 @@ export function useWebRTC({
       cleanupCall()
     }
   }, [socket, callState, currentUserId, currentUserName, 
-      currentUserPic, createPeerConnection])
+      currentUserPic, createPeerConnection, cleanupCall])
+
+  // REJECT CALL
+  const rejectCall = useCallback(() => {
+    if (!socket || !incomingCall) return
+
+    socket.emit('call:reject', { to: incomingCall.from })
+    setIncomingCall(null)
+    setCallState('idle')
+  }, [socket, incomingCall])
 
   // ACCEPT CALL
   const acceptCall = useCallback(async () => {
@@ -266,6 +320,7 @@ export function useWebRTC({
 
     try {
       const { from, offer } = incomingCall
+      remoteUserIdRef.current = from
       setRemoteUserId(from)
       setCallState('calling')
 
@@ -295,26 +350,7 @@ export function useWebRTC({
       console.error('Accept call error:', error)
       rejectCall()
     }
-  }, [socket, incomingCall, createPeerConnection])
-
-  // REJECT CALL
-  const rejectCall = useCallback(() => {
-    if (!socket || !incomingCall) return
-
-    socket.emit('call:reject', { to: incomingCall.from })
-    setIncomingCall(null)
-    setCallState('idle')
-  }, [socket, incomingCall])
-
-  // END CALL
-  const endCall = useCallback(() => {
-    if (socket && remoteUserId) {
-      socket.emit('call:end', { to: remoteUserId })
-    }
-    cleanupCall()
-    setCallState('ended')
-    setTimeout(() => setCallState('idle'), 2000)
-  }, [socket, remoteUserId])
+  }, [socket, incomingCall, createPeerConnection, rejectCall])
 
   // MUTE/UNMUTE
   const toggleMute = useCallback(() => {
@@ -324,25 +360,6 @@ export function useWebRTC({
       })
       setIsMuted(prev => !prev)
     }
-  }, [])
-
-  // CLEANUP
-  const cleanupCall = useCallback(() => {
-    localStreamRef.current?.getTracks().forEach(t => t.stop())
-    localStreamRef.current = null
-    peerRef.current?.close()
-    peerRef.current = null
-    if (remoteAudioRef.current) {
-      remoteAudioRef.current.srcObject = null
-    }
-    callStartTimeRef.current = null
-    if (retryIntervalRef.current) {
-      clearInterval(retryIntervalRef.current)
-      retryIntervalRef.current = null
-    }
-    setRemoteUserId(null)
-    setCallDuration(0)
-    setIsMuted(false)
   }, [])
 
   // SOCKET EVENT HANDLERS
@@ -364,10 +381,17 @@ export function useWebRTC({
     { answer }: { answer: RTCSessionDescriptionInit }
   ) => {
     if (!peerRef.current) return
-    await peerRef.current.setRemoteDescription(
-      new RTCSessionDescription(answer)
-    )
-  }, [])
+
+    try {
+      await peerRef.current.setRemoteDescription(
+        new RTCSessionDescription(answer)
+      )
+      console.log('Remote description set - waiting for ICE')
+    } catch (error) {
+      console.error('Set remote description error:', error)
+      endCall()
+    }
+  }, [endCall])
 
   const handleCallRejected = useCallback(() => {
     cleanupCall()
