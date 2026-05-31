@@ -94,7 +94,7 @@ export function useWebRTC({
         remoteAudioRef.current.srcObject = event.streams[0]
         remoteAudioRef.current.volume = 1.0
         remoteAudioRef.current.muted = false
-        remoteAudioRef.current.playsInline = true
+        remoteAudioRef.current.setAttribute('playsinline', 'true')
 
         const playPromise = remoteAudioRef.current.play()
         if (playPromise !== undefined) {
