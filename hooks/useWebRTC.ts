@@ -23,30 +23,30 @@ interface IncomingCallData {
   offer: RTCSessionDescriptionInit
 }
 
-const TURN_USERNAME = process.env.NEXT_PUBLIC_TURN_USERNAME
-const TURN_CREDENTIAL = process.env.NEXT_PUBLIC_TURN_CREDENTIAL
-
 const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
-    // Google free STUN servers
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    ...(TURN_USERNAME && TURN_CREDENTIAL
-      ? [
-          // Metered TURN server (works across different networks)
-          {
-            urls: 'turn:relay.metered.ca:80',
-            username: TURN_USERNAME,
-            credential: TURN_CREDENTIAL,
-          },
-          {
-            urls: 'turn:relay.metered.ca:443',
-            username: TURN_USERNAME,
-            credential: TURN_CREDENTIAL,
-          },
-        ]
-      : []),
-  ]
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    {
+      urls: 'turn:relay.metered.ca:80',
+      username: process.env.NEXT_PUBLIC_TURN_USERNAME || '',
+      credential: process.env.NEXT_PUBLIC_TURN_CREDENTIAL || '',
+    },
+    {
+      urls: 'turn:relay.metered.ca:443',
+      username: process.env.NEXT_PUBLIC_TURN_USERNAME || '',
+      credential: process.env.NEXT_PUBLIC_TURN_CREDENTIAL || '',
+    },
+    {
+      urls: 'turns:relay.metered.ca:443',
+      username: process.env.NEXT_PUBLIC_TURN_USERNAME || '',
+      credential: process.env.NEXT_PUBLIC_TURN_CREDENTIAL || '',
+    },
+  ],
+  iceCandidatePoolSize: 10,
 }
 
 export function useWebRTC({
@@ -67,7 +67,7 @@ export function useWebRTC({
   const peerRef = useRef<RTCPeerConnection | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null)
-  const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const callStartTimeRef = useRef<number | null>(null)
   const callStateRef = useRef<CallState>('idle')
   const retryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -92,41 +92,82 @@ export function useWebRTC({
     peer.ontrack = (event) => {
       if (remoteAudioRef.current) {
         remoteAudioRef.current.srcObject = event.streams[0]
-        remoteAudioRef.current.play().catch(console.error)
+        remoteAudioRef.current.volume = 1.0
+        remoteAudioRef.current.muted = false
+        remoteAudioRef.current.playsInline = true
+
+        const playPromise = remoteAudioRef.current.play()
+        if (playPromise !== undefined) {
+          playPromise.catch(async () => {
+            await new Promise(r => setTimeout(r, 500))
+            remoteAudioRef.current?.play().catch(console.error)
+          })
+        }
       }
     }
 
     peer.onconnectionstatechange = () => {
       if (peer.connectionState === 'connected') {
         setCallState('connected')
-        // Start duration timer
         setCallDuration(0)
-        durationIntervalRef.current = setInterval(() => {
-          setCallDuration(prev => prev + 1)
-        }, 1000)
+        callStartTimeRef.current = Date.now()
       }
       if (
-        peer.connectionState === 'disconnected' ||
         peer.connectionState === 'failed'
       ) {
         endCall()
       }
     }
 
+    peer.oniceconnectionstatechange = () => {
+      console.log('ICE state:', peer.iceConnectionState)
+
+      if (peer.iceConnectionState === 'disconnected') {
+        setTimeout(() => {
+          if (peer.iceConnectionState === 'disconnected') {
+            console.log('ICE disconnected - attempting restart')
+            peer.restartIce()
+          }
+        }, 3000)
+      }
+
+      if (peer.iceConnectionState === 'failed') {
+        console.log('ICE failed - ending call')
+        endCall()
+      }
+    }
+
+    peer.onnegotiationneeded = async () => {
+      console.log('Negotiation needed')
+    }
+
     return peer
   }, [socket])
 
   const getLocalStream = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({
+    const constraints: MediaStreamConstraints = {
       audio: {
         echoCancellation: true,
         noiseSuppression: true,
+        autoGainControl: true,
         sampleRate: 44100,
+        channelCount: 1,
       },
-      video: false
-    })
-    localStreamRef.current = stream
-    return stream
+      video: false,
+    }
+
+    try {
+      const stream = await navigator.mediaDevices
+        .getUserMedia(constraints)
+      localStreamRef.current = stream
+      return stream
+    } catch (err) {
+      console.log('Trying basic audio constraints...')
+      const stream = await navigator.mediaDevices
+        .getUserMedia({ audio: true, video: false })
+      localStreamRef.current = stream
+      return stream
+    }
   }
 
   // INITIATE CALL
@@ -218,6 +259,7 @@ export function useWebRTC({
       const { from, offer } = incomingCall
       setRemoteUserId(from)
       setCallState('connected')
+      callStartTimeRef.current = Date.now()
 
       const stream = await getLocalStream()
       const peer = createPeerConnection(from)
@@ -240,12 +282,6 @@ export function useWebRTC({
       })
 
       setIncomingCall(null)
-
-      // Start duration timer
-      setCallDuration(0)
-      durationIntervalRef.current = setInterval(() => {
-        setCallDuration(prev => prev + 1)
-      }, 1000)
 
     } catch (error) {
       console.error('Accept call error:', error)
@@ -291,10 +327,7 @@ export function useWebRTC({
     if (remoteAudioRef.current) {
       remoteAudioRef.current.srcObject = null
     }
-    if (durationIntervalRef.current) {
-      clearInterval(durationIntervalRef.current)
-      durationIntervalRef.current = null
-    }
+    callStartTimeRef.current = null
     if (retryIntervalRef.current) {
       clearInterval(retryIntervalRef.current)
       retryIntervalRef.current = null
@@ -358,6 +391,43 @@ export function useWebRTC({
     setCallState('idle')
     alert('User is not available for call')
   }, [cleanupCall])
+
+  useEffect(() => {
+    if (callState !== 'connected') return
+
+    callStartTimeRef.current = Date.now()
+
+    const timer = setInterval(() => {
+      if (callStartTimeRef.current) {
+        const elapsed = Math.floor(
+          (Date.now() - callStartTimeRef.current) / 1000
+        )
+        setCallDuration(elapsed)
+      }
+    }, 1000)
+
+    return () => {
+      clearInterval(timer)
+      callStartTimeRef.current = null
+    }
+  }, [callState])
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden && callState === 'connected') {
+        console.log('App backgrounded during call')
+      }
+    }
+
+    document.addEventListener(
+      'visibilitychange',
+      handleVisibilityChange
+    )
+    return () => document.removeEventListener(
+      'visibilitychange',
+      handleVisibilityChange
+    )
+  }, [callState])
 
   return {
     // State
