@@ -3,17 +3,48 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Bell, Home, LogOut, MessageCircle, Settings, Sparkles } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { ActiveCallScreen } from "@/components/call/ActiveCallScreen";
 import { IncomingCallPopup } from "@/components/call/IncomingCallPopup";
-import { useWebRTC } from "@/hooks/useWebRTC";
+import { useWebRTC, type CallState } from "@/hooks/useWebRTC";
 import type { AppNotification, MessageDto } from "@/lib/types";
 import { useAuthStore } from "@/stores/useAuthStore";
-import { useCallStore } from "@/stores/useCallStore";
 import { useSocketStore } from "@/stores/useSocketStore";
+
+// ─── Call Context ────────────────────────────────────────────────────────────
+
+export interface CallProps {
+  callState: CallState;
+  remoteName: string;
+  remotePic?: string;
+  incomingCall: {
+    from: string;
+    callerName: string;
+    callerPic?: string;
+    offer: RTCSessionDescriptionInit;
+  } | null;
+  isMuted: boolean;
+  callDuration: number;
+  remoteAudioRef: React.RefObject<HTMLAudioElement | null>;
+  startCall: (targetUserId: string, targetName: string, targetPic?: string) => void;
+  acceptCall: () => void;
+  rejectCall: () => void;
+  endCall: () => void;
+  toggleMute: () => void;
+}
+
+const CallContext = createContext<CallProps | null>(null);
+
+export function useCallContext(): CallProps {
+  const ctx = useContext(CallContext);
+  if (!ctx) throw new Error("useCallContext must be used inside ProtectedShell");
+  return ctx;
+}
+
+// ─── Unread helpers (unchanged) ───────────────────────────────────────────────
 
 type UnreadMessageMap = Record<string, number>;
 
@@ -100,6 +131,8 @@ function checkTokenExpiry() {
   }
 }
 
+// ─── ProtectedShell ───────────────────────────────────────────────────────────
+
 export function ProtectedShell({
   title,
   children,
@@ -112,32 +145,36 @@ export function ProtectedShell({
   const hydrated = useAuthStore((state) => state.hydrated);
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
-  const incomingCall = useCallStore((state) => state.incomingCall);
-  const shouldAcceptIncomingCall = useCallStore((state) => state.shouldAcceptIncomingCall);
-  const setIncomingCall = useCallStore((state) => state.setIncomingCall);
-  const acceptIncomingCall = useCallStore((state) => state.acceptIncomingCall);
-  const clearIncomingCall = useCallStore((state) => state.clearIncomingCall);
   const socket = useSocketStore((state) => state.socket);
   const initSocket = useSocketStore((state) => state.initSocket);
+
+  // ── Single WebRTC instance ──────────────────────────────────────────────────
   const {
     callState: globalCallState,
     remoteName: globalRemoteName,
     remotePic: globalRemotePic,
+    incomingCall: globalIncomingCall,
     isMuted: globalIsMuted,
     callDuration: globalCallDuration,
     remoteAudioRef: globalRemoteAudioRef,
+    startCall: startGlobalCall,
     acceptCall: acceptGlobalCall,
+    rejectCall: rejectGlobalCall,
     endCall: endGlobalCall,
     toggleMute: toggleGlobalMute,
     handleIncomingCall: handleGlobalIncomingCall,
+    handleCallAccepted,
+    handleCallRejected,
     handleCallEnded: handleGlobalCallEnded,
     handleIceCandidate: handleGlobalIceCandidate,
+    handleUnavailable,
   } = useWebRTC({
     socket,
     currentUserId: user?.id ?? "",
     currentUserName: user?.displayName ?? user?.username ?? "",
     currentUserPic: user?.profilePic ?? undefined,
   });
+
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -147,6 +184,7 @@ export function ProtectedShell({
   );
   const notifRef = useRef<HTMLDivElement>(null);
 
+  // ── Auth / redirect ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!hydrated) {
       return;
@@ -166,12 +204,14 @@ export function ProtectedShell({
     }
   }, [hydrated, logout, router, user]);
 
+  // ── Socket init ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (hydrated && user?.id) {
       initSocket(user.id);
     }
   }, [hydrated, user?.id, initSocket]);
 
+  // ── Socket event listeners (ALL call events live here now) ─────────────────
   useEffect(() => {
     if (!socket) {
       return;
@@ -207,68 +247,47 @@ export function ProtectedShell({
       }
     };
 
-    const handleIncomingCall = (data: Parameters<typeof setIncomingCall>[0]) => {
-      if (window.location.pathname === "/chat") {
-        return;
-      }
-
-      console.log("Global call:incoming received:", data);
-      setIncomingCall(data);
+    // All call events handled by the single useWebRTC instance
+    const handleIncomingCallGlobal = (data: {
+      from: string;
+      callerName: string;
+      callerPic?: string;
+      offer: RTCSessionDescriptionInit;
+    }) => {
+      console.log("Global incoming call:", data);
+      handleGlobalIncomingCall(data);
     };
 
     socket.on("new_notification", handleNotification);
     socket.on("receive_message", handleReceiveMessage);
-    socket.on("call:incoming", handleIncomingCall);
+    socket.on("call:incoming", handleIncomingCallGlobal);
+    socket.on("call:accepted", handleCallAccepted);
+    socket.on("call:rejected", handleCallRejected);
+    socket.on("call:ended", handleGlobalCallEnded);
+    socket.on("call:ice-candidate", handleGlobalIceCandidate);
+    socket.on("call:unavailable", handleUnavailable);
 
     return () => {
       socket.off("new_notification", handleNotification);
       socket.off("receive_message", handleReceiveMessage);
-      socket.off("call:incoming", handleIncomingCall);
-    };
-  }, [setIncomingCall, socket]);
-
-  useEffect(() => {
-    if (
-      pathname !== "/chat" ||
-      !incomingCall ||
-      !shouldAcceptIncomingCall ||
-      globalCallState !== "idle"
-    ) {
-      return;
-    }
-
-    handleGlobalIncomingCall(incomingCall);
-  }, [
-    pathname,
-    incomingCall,
-    shouldAcceptIncomingCall,
-    globalCallState,
-    handleGlobalIncomingCall,
-  ]);
-
-  useEffect(() => {
-    if (!shouldAcceptIncomingCall || globalCallState !== "incoming") {
-      return;
-    }
-
-    clearIncomingCall();
-    void acceptGlobalCall();
-  }, [acceptGlobalCall, clearIncomingCall, globalCallState, shouldAcceptIncomingCall]);
-
-  useEffect(() => {
-    if (!socket || globalCallState === "idle") {
-      return;
-    }
-
-    socket.on("call:ended", handleGlobalCallEnded);
-    socket.on("call:ice-candidate", handleGlobalIceCandidate);
-
-    return () => {
+      socket.off("call:incoming", handleIncomingCallGlobal);
+      socket.off("call:accepted", handleCallAccepted);
+      socket.off("call:rejected", handleCallRejected);
       socket.off("call:ended", handleGlobalCallEnded);
       socket.off("call:ice-candidate", handleGlobalIceCandidate);
+      socket.off("call:unavailable", handleUnavailable);
     };
-  }, [globalCallState, handleGlobalCallEnded, handleGlobalIceCandidate, socket]);
+  }, [
+    socket,
+    handleGlobalIncomingCall,
+    handleCallAccepted,
+    handleCallRejected,
+    handleGlobalCallEnded,
+    handleGlobalIceCandidate,
+    handleUnavailable,
+  ]);
 
+  // ── Unread sync ────────────────────────────────────────────────────────────
   useEffect(() => {
     const handleUnreadChanged = (event: Event) => {
       const nextUnreadMap = (event as CustomEvent<UnreadMessageMap>).detail;
@@ -289,6 +308,7 @@ export function ProtectedShell({
     };
   }, []);
 
+  // ── Notification popover outside-click ────────────────────────────────────
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
@@ -306,6 +326,7 @@ export function ProtectedShell({
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
+  // ── Loading state ──────────────────────────────────────────────────────────
   if (!hydrated || !user) {
     return (
       <div className="flex h-screen items-center justify-center overflow-hidden bg-gray-50 p-4 sm:p-6">
@@ -319,273 +340,294 @@ export function ProtectedShell({
     );
   }
 
+  // ── Call context value (single source of truth) ────────────────────────────
+  const callContextValue: CallProps = {
+    callState: globalCallState,
+    remoteName: globalRemoteName,
+    remotePic: globalRemotePic,
+    incomingCall: globalIncomingCall,
+    isMuted: globalIsMuted,
+    callDuration: globalCallDuration,
+    remoteAudioRef: globalRemoteAudioRef,
+    startCall: startGlobalCall,
+    acceptCall: acceptGlobalCall,
+    rejectCall: rejectGlobalCall,
+    endCall: endGlobalCall,
+    toggleMute: toggleGlobalMute,
+  };
+
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
-      <aside className="hidden h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r bg-white md:flex lg:w-72">
-        <div className="gradient-brand rounded-[1.25rem] p-4 text-white lg:p-5">
-          <p className="font-display text-xl font-bold lg:text-2xl">ChatSphere</p>
-          <p className="mt-1 text-xs text-white/80 sm:text-sm">Connect. Chat. Share.</p>
-          <div className="mt-5 flex items-center gap-3 rounded-2xl bg-white/12 p-3">
-            <Avatar
-              name={user.displayName ?? user.username}
-              size="lg"
-              src={user.profilePic}
-              className="h-12 w-12 shrink-0 lg:h-14 lg:w-14"
-            />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold sm:text-base">
-                {user.displayName ?? user.username}
-              </p>
-              <p className="truncate text-xs text-white/80 sm:text-sm">@{user.username}</p>
+    <CallContext.Provider value={callContextValue}>
+      <div className="flex h-screen overflow-hidden bg-gray-50">
+        <aside className="hidden h-full w-64 flex-shrink-0 flex-col overflow-y-auto border-r bg-white md:flex lg:w-72">
+          <div className="gradient-brand rounded-[1.25rem] p-4 text-white lg:p-5">
+            <p className="font-display text-xl font-bold lg:text-2xl">ChatSphere</p>
+            <p className="mt-1 text-xs text-white/80 sm:text-sm">Connect. Chat. Share.</p>
+            <div className="mt-5 flex items-center gap-3 rounded-2xl bg-white/12 p-3">
+              <Avatar
+                name={user.displayName ?? user.username}
+                size="lg"
+                src={user.profilePic}
+                className="h-12 w-12 shrink-0 lg:h-14 lg:w-14"
+              />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold sm:text-base">
+                  {user.displayName ?? user.username}
+                </p>
+                <p className="truncate text-xs text-white/80 sm:text-sm">@{user.username}</p>
+              </div>
             </div>
           </div>
-        </div>
 
-        <nav className="mt-4 flex flex-1 flex-col gap-2 overflow-y-auto">
-          {navItems.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href;
-            return (
-              <Link
-                key={href}
-                href={href}
-                onClick={href === "/chat" ? () => setTotalUnreadMessages(0) : undefined}
-                className={`flex min-h-[44px] items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition sm:text-base ${
-                  active
-                    ? "bg-[var(--brand-soft)] text-[var(--brand)]"
-                    : "text-[var(--muted)] hover:bg-white hover:text-[var(--foreground)]"
-                }`}
-              >
-                <div className="relative">
-                  <Icon size={20} className="shrink-0" />
-                  {href === "/chat" && totalUnreadMessages > 0 && (
-                    <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-medium text-white">
-                      {totalUnreadMessages > 99 ? "99+" : totalUnreadMessages}
-                    </span>
-                  )}
-                </div>
-                <span className="truncate">{label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="mt-4">
-          <Button
-            variant="danger"
-            className="min-h-[44px] w-full justify-center"
-            onClick={() => {
-              logout();
-              router.replace("/login");
-            }}
-          >
-            <LogOut size={18} className="shrink-0" />
-            Logout
-          </Button>
-        </div>
-      </aside>
-
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex-1 overflow-hidden pb-16 md:pb-0">
-          <main className="app-card flex h-full min-h-0 flex-col overflow-hidden rounded-none md:m-4 md:rounded-[1.5rem] lg:m-6">
-            <header className="border-b border-[var(--border)] px-3 py-3 sm:px-4 sm:py-4 lg:px-6">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-display text-lg font-bold sm:text-xl lg:text-2xl">{title}</p>
-                  <p className="text-xs text-[var(--muted)] sm:text-sm">
-                    Real-time conversations with your circle.
-                  </p>
-                </div>
-                <div className="hidden items-center md:flex">
-                  <button
-                    data-notification-toggle="true"
-                    onClick={() => {
-                      setShowNotifications(!showNotifications);
-                      setUnreadCount(0);
-                    }}
-                    className="relative rounded-full p-2 transition-colors hover:bg-gray-100"
-                  >
-                    <Bell className="h-5 w-5 text-gray-600" />
-                    {unreadCount > 0 && (
-                      <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-medium text-white">
-                        {unreadCount > 9 ? "9+" : unreadCount}
+          <nav className="mt-4 flex flex-1 flex-col gap-2 overflow-y-auto">
+            {navItems.map(({ href, label, icon: Icon }) => {
+              const active = pathname === href;
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={href === "/chat" ? () => setTotalUnreadMessages(0) : undefined}
+                  className={`flex min-h-[44px] items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition sm:text-base ${
+                    active
+                      ? "bg-[var(--brand-soft)] text-[var(--brand)]"
+                      : "text-[var(--muted)] hover:bg-white hover:text-[var(--foreground)]"
+                  }`}
+                >
+                  <div className="relative">
+                    <Icon size={20} className="shrink-0" />
+                    {href === "/chat" && totalUnreadMessages > 0 && (
+                      <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-medium text-white">
+                        {totalUnreadMessages > 99 ? "99+" : totalUnreadMessages}
                       </span>
                     )}
-                  </button>
+                  </div>
+                  <span className="truncate">{label}</span>
+                </Link>
+              );
+            })}
+          </nav>
+
+          <div className="mt-4">
+            <Button
+              variant="danger"
+              className="min-h-[44px] w-full justify-center"
+              onClick={() => {
+                logout();
+                router.replace("/login");
+              }}
+            >
+              <LogOut size={18} className="shrink-0" />
+              Logout
+            </Button>
+          </div>
+        </aside>
+
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="flex-1 overflow-hidden pb-16 md:pb-0">
+            <main className="app-card flex h-full min-h-0 flex-col overflow-hidden rounded-none md:m-4 md:rounded-[1.5rem] lg:m-6">
+              <header className="border-b border-[var(--border)] px-3 py-3 sm:px-4 sm:py-4 lg:px-6">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-display text-lg font-bold sm:text-xl lg:text-2xl">{title}</p>
+                    <p className="text-xs text-[var(--muted)] sm:text-sm">
+                      Real-time conversations with your circle.
+                    </p>
+                  </div>
+                  <div className="hidden items-center md:flex">
+                    <button
+                      data-notification-toggle="true"
+                      onClick={() => {
+                        setShowNotifications(!showNotifications);
+                        setUnreadCount(0);
+                      }}
+                      className="relative rounded-full p-2 transition-colors hover:bg-gray-100"
+                    >
+                      <Bell className="h-5 w-5 text-gray-600" />
+                      {unreadCount > 0 && (
+                        <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-medium text-white">
+                          {unreadCount > 9 ? "9+" : unreadCount}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                  <div className="flex items-center md:hidden">
+                    <Avatar
+                      name={user.displayName ?? user.username}
+                      size="sm"
+                      src={user.profilePic}
+                      className="h-10 w-10 shrink-0"
+                    />
+                  </div>
                 </div>
-                <div className="flex items-center md:hidden">
-                  <Avatar
-                    name={user.displayName ?? user.username}
-                    size="sm"
-                    src={user.profilePic}
-                    className="h-10 w-10 shrink-0"
-                  />
-                </div>
-              </div>
-            </header>
-            <div className="flex-1 min-h-0 overflow-y-auto pb-16 md:pb-0">{children}</div>
-          </main>
+              </header>
+              <div className="flex-1 min-h-0 overflow-y-auto pb-16 md:pb-0">{children}</div>
+            </main>
+          </div>
         </div>
-      </div>
 
-      {incomingCall && (
-        <IncomingCallPopup
-          callerName={incomingCall.callerName}
-          callerPic={incomingCall.callerPic}
-          onAccept={() => {
-            acceptIncomingCall();
-            router.push(`/chat?friend=${encodeURIComponent(incomingCall.from)}&call=incoming`);
-          }}
-          onReject={() => {
-            socket?.emit("call:reject", { to: incomingCall.from });
-            clearIncomingCall();
-          }}
-        />
-      )}
+        {/* Incoming call popup — shown on ANY page when not already in a call */}
+        {globalCallState === "incoming" && (
+          <IncomingCallPopup
+            callerName={globalRemoteName}
+            callerPic={globalRemotePic}
+            onAccept={() => {
+              void acceptGlobalCall();
+              if (pathname !== "/chat") {
+                router.push("/chat");
+              }
+            }}
+            onReject={rejectGlobalCall}
+          />
+        )}
 
-      {(globalCallState === "connected" || globalCallState === "ended") && (
-        <ActiveCallScreen
-          callState={globalCallState}
-          remoteName={globalRemoteName}
-          remotePic={globalRemotePic}
-          isMuted={globalIsMuted}
-          callDuration={globalCallDuration}
-          onMute={toggleGlobalMute}
-          onEnd={endGlobalCall}
-          remoteAudioRef={globalRemoteAudioRef}
-        />
-      )}
+        {/* Active call screen — shown globally */}
+        {(globalCallState === "calling" ||
+          globalCallState === "connected" ||
+          globalCallState === "ended") && (
+          <ActiveCallScreen
+            callState={globalCallState}
+            remoteName={globalRemoteName}
+            remotePic={globalRemotePic}
+            isMuted={globalIsMuted}
+            callDuration={globalCallDuration}
+            onMute={toggleGlobalMute}
+            onEnd={endGlobalCall}
+            remoteAudioRef={globalRemoteAudioRef}
+          />
+        )}
 
-      {showNotifications && (
-        <div
-          ref={notifRef}
-          className="fixed inset-x-4 bottom-20 z-50 max-h-96 overflow-y-auto rounded-2xl border bg-white shadow-xl md:inset-x-auto md:right-10 md:top-24 md:w-80 md:bottom-auto"
-        >
-          <div className="flex items-center justify-between border-b px-4 py-3">
-            <h3 className="text-sm font-semibold">Notifications</h3>
-            {notifications.length > 0 && (
-              <button
-                onClick={() => setNotifications([])}
-                className="text-xs text-gray-400 hover:text-gray-600"
-              >
-                Clear all
-              </button>
+        {showNotifications && (
+          <div
+            ref={notifRef}
+            className="fixed inset-x-4 bottom-20 z-50 max-h-96 overflow-y-auto rounded-2xl border bg-white shadow-xl md:inset-x-auto md:right-10 md:top-24 md:w-80 md:bottom-auto"
+          >
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <h3 className="text-sm font-semibold">Notifications</h3>
+              {notifications.length > 0 && (
+                <button
+                  onClick={() => setNotifications([])}
+                  className="text-xs text-gray-400 hover:text-gray-600"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+
+            {notifications.length === 0 ? (
+              <div className="px-4 py-8 text-center text-sm text-gray-400">No notifications yet</div>
+            ) : (
+              notifications.map((notif, index) => (
+                <div
+                  key={`${notif.timestamp}-${notif.fromUserId}-${index}`}
+                  onClick={() => {
+                    setShowNotifications(false);
+                    setTotalUnreadMessages(0);
+                    router.push("/chat");
+                  }}
+                  className="flex cursor-pointer items-start gap-3 border-b px-4 py-3 transition-colors hover:bg-gray-50 last:border-b-0"
+                >
+                  <Avatar
+                    name={notif.fromUsername || "Someone"}
+                    src={notif.fromProfilePic}
+                    size="sm"
+                    className="h-9 w-9 shrink-0"
+                  />
+
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-gray-900">{notif.fromUsername}</p>
+                    <p className="mt-0.5 truncate text-xs text-gray-500">{notif.text}</p>
+                    <p className="mt-1 text-xs text-gray-400">
+                      {new Date(notif.timestamp).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                  </div>
+
+                  <span className="mt-1 flex-shrink-0 text-sm">
+                    {(notif.type as string) === "friend_request" ? "\u{1F465}" : "\u{1F4AC}"}
+                  </span>
+                </div>
+              ))
             )}
           </div>
+        )}
 
-          {notifications.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-gray-400">No notifications yet</div>
-          ) : (
-            notifications.map((notif, index) => (
-              <div
-                key={`${notif.timestamp}-${notif.fromUserId}-${index}`}
-                onClick={() => {
-                  setShowNotifications(false);
-                  setTotalUnreadMessages(0);
-                  router.push("/chat");
-                }}
-                className="flex cursor-pointer items-start gap-3 border-b px-4 py-3 transition-colors hover:bg-gray-50 last:border-b-0"
-              >
-                <Avatar
-                  name={notif.fromUsername || "Someone"}
-                  src={notif.fromProfilePic}
-                  size="sm"
-                  className="h-9 w-9 shrink-0"
-                />
-
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-gray-900">{notif.fromUsername}</p>
-                  <p className="mt-0.5 truncate text-xs text-gray-500">{notif.text}</p>
-                  <p className="mt-1 text-xs text-gray-400">
-                    {new Date(notif.timestamp).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </p>
-                </div>
-
-                <span className="mt-1 flex-shrink-0 text-sm">
-                  {(notif.type as string) === "friend_request" ? "\u{1F465}" : "\u{1F4AC}"}
+        <nav className="pb-safe fixed bottom-0 left-0 right-0 z-50 flex border-t bg-white md:hidden">
+          <Link
+            href="/"
+            aria-label="Home"
+            className={`flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
+              pathname === "/" ? "bg-[var(--brand-soft)] text-[var(--brand)]" : "text-[var(--muted)]"
+            }`}
+          >
+            <Home size={24} className="h-6 w-6 shrink-0" />
+            <span className="text-[10px] sm:text-xs">Home</span>
+          </Link>
+          <button
+            type="button"
+            aria-label="Chat"
+            onClick={() => {
+              setTotalUnreadMessages(0);
+              router.push("/chat");
+            }}
+            className={`relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
+              pathname === "/chat" ? "bg-[var(--brand-soft)] text-[var(--brand)]" : "text-[var(--muted)]"
+            }`}
+          >
+            <div className="relative">
+              <MessageCircle size={24} className="h-6 w-6 shrink-0" />
+              {totalUnreadMessages > 0 && (
+                <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-medium text-white">
+                  {totalUnreadMessages > 99 ? "99+" : totalUnreadMessages}
                 </span>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-
-      <nav className="pb-safe fixed bottom-0 left-0 right-0 z-50 flex border-t bg-white md:hidden">
-        <Link
-          href="/"
-          aria-label="Home"
-          className={`flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
-            pathname === "/" ? "bg-[var(--brand-soft)] text-[var(--brand)]" : "text-[var(--muted)]"
-          }`}
-        >
-          <Home size={24} className="h-6 w-6 shrink-0" />
-          <span className="text-[10px] sm:text-xs">Home</span>
-        </Link>
-        <button
-          type="button"
-          aria-label="Chat"
-          onClick={() => {
-            setTotalUnreadMessages(0);
-            router.push("/chat");
-          }}
-          className={`relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
-            pathname === "/chat" ? "bg-[var(--brand-soft)] text-[var(--brand)]" : "text-[var(--muted)]"
-          }`}
-        >
-          <div className="relative">
-            <MessageCircle size={24} className="h-6 w-6 shrink-0" />
-            {totalUnreadMessages > 0 && (
-              <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-medium text-white">
-                {totalUnreadMessages > 99 ? "99+" : totalUnreadMessages}
+              )}
+            </div>
+            <span className="text-[10px] sm:text-xs">Chat</span>
+          </button>
+          <button
+            data-notification-toggle="true"
+            type="button"
+            onClick={() => {
+              setShowNotifications(!showNotifications);
+              setUnreadCount(0);
+            }}
+            className="relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 text-[var(--muted)] transition"
+          >
+            <Bell size={24} className="h-6 w-6 shrink-0" />
+            {unreadCount > 0 && (
+              <span className="absolute right-[calc(50%-22px)] top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-medium text-white">
+                {unreadCount > 9 ? "9+" : unreadCount}
               </span>
             )}
-          </div>
-          <span className="text-[10px] sm:text-xs">Chat</span>
-        </button>
-        <button
-          data-notification-toggle="true"
-          type="button"
-          onClick={() => {
-            setShowNotifications(!showNotifications);
-            setUnreadCount(0);
-          }}
-          className="relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 text-[var(--muted)] transition"
-        >
-          <Bell size={24} className="h-6 w-6 shrink-0" />
-          {unreadCount > 0 && (
-            <span className="absolute right-[calc(50%-22px)] top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-medium text-white">
-              {unreadCount > 9 ? "9+" : unreadCount}
-            </span>
-          )}
-          <span className="text-[10px] sm:text-xs">Alerts</span>
-        </button>
-        <Link
-          href="/stories"
-          aria-label="Stories"
-          className={`flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
-            pathname === "/stories"
-              ? "bg-[var(--brand-soft)] text-[var(--brand)]"
-              : "text-[var(--muted)]"
-          }`}
-        >
-          <Sparkles size={24} className="h-6 w-6 shrink-0" />
-          <span className="text-[10px] sm:text-xs">Stories</span>
-        </Link>
-        <Link
-          href="/settings"
-          aria-label="Settings"
-          className={`flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
-            pathname === "/settings"
-              ? "bg-[var(--brand-soft)] text-[var(--brand)]"
-              : "text-[var(--muted)]"
-          }`}
-        >
-          <Settings size={24} className="h-6 w-6 shrink-0" />
-          <span className="text-[10px] sm:text-xs">Settings</span>
-        </Link>
-      </nav>
-    </div>
+            <span className="text-[10px] sm:text-xs">Alerts</span>
+          </button>
+          <Link
+            href="/stories"
+            aria-label="Stories"
+            className={`flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
+              pathname === "/stories"
+                ? "bg-[var(--brand-soft)] text-[var(--brand)]"
+                : "text-[var(--muted)]"
+            }`}
+          >
+            <Sparkles size={24} className="h-6 w-6 shrink-0" />
+            <span className="text-[10px] sm:text-xs">Stories</span>
+          </Link>
+          <Link
+            href="/settings"
+            aria-label="Settings"
+            className={`flex min-h-[56px] flex-1 flex-col items-center justify-center gap-1 py-2 transition ${
+              pathname === "/settings"
+                ? "bg-[var(--brand-soft)] text-[var(--brand)]"
+                : "text-[var(--muted)]"
+            }`}
+          >
+            <Settings size={24} className="h-6 w-6 shrink-0" />
+            <span className="text-[10px] sm:text-xs">Settings</span>
+          </Link>
+        </nav>
+      </div>
+    </CallContext.Provider>
   );
 }

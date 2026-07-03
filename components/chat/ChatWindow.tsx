@@ -6,12 +6,39 @@ import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { MessageInput } from "@/components/chat/MessageInput";
-import { useWebRTC } from "@/hooks/useWebRTC";
 import { IncomingCallPopup } from "@/components/call/IncomingCallPopup";
 import { ActiveCallScreen } from "@/components/call/ActiveCallScreen";
-import { useSocketStore } from "@/stores/useSocketStore";
-import { useAuthStore } from "@/stores/useAuthStore";
+import type { CallState } from "@/hooks/useWebRTC";
 import type { FriendListItem, MessageDto } from "@/lib/types";
+
+interface ChatWindowProps {
+  currentUserId: string;
+  selectedFriend: FriendListItem | null;
+  onlineUserIds: string[];
+  messages: MessageDto[];
+  typing: boolean;
+  onBack: () => void;
+  onSend: (payload: { text?: string; fileUrl?: string; fileType?: string }) => Promise<void>;
+  onTypingChange: (isTyping: boolean) => void;
+  // Call props from ProtectedShell (single WebRTC instance)
+  callState: CallState;
+  remoteName: string;
+  remotePic?: string;
+  incomingCall: {
+    from: string;
+    callerName: string;
+    callerPic?: string;
+    offer: RTCSessionDescriptionInit;
+  } | null;
+  isMuted: boolean;
+  callDuration: number;
+  remoteAudioRef: React.RefObject<HTMLAudioElement | null>;
+  onStartCall: (targetUserId: string, targetName: string, targetPic?: string) => void;
+  onAcceptCall: () => void;
+  onRejectCall: () => void;
+  onEndCall: () => void;
+  onToggleMute: () => void;
+}
 
 export function ChatWindow({
   currentUserId,
@@ -22,72 +49,24 @@ export function ChatWindow({
   onBack,
   onSend,
   onTypingChange,
-}: {
-  currentUserId: string;
-  selectedFriend: FriendListItem | null;
-  onlineUserIds: string[];
-  messages: MessageDto[];
-  typing: boolean;
-  onBack: () => void;
-  onSend: (payload: { text?: string; fileUrl?: string; fileType?: string }) => Promise<void>;
-  onTypingChange: (isTyping: boolean) => void;
-}) {
+  callState,
+  remoteName,
+  remotePic,
+  incomingCall,
+  isMuted,
+  callDuration,
+  remoteAudioRef,
+  onStartCall,
+  onAcceptCall,
+  onRejectCall,
+  onEndCall,
+  onToggleMute,
+}: ChatWindowProps) {
   const listRef = useRef<HTMLDivElement>(null);
-  const socket = useSocketStore(state => state.socket);
-  const currentUser = useAuthStore(state => state.user);
-
-  const {
-    callState,
-    remoteName,
-    remotePic,
-    incomingCall,
-    isMuted,
-    callDuration,
-    remoteAudioRef,
-    startCall,
-    acceptCall,
-    rejectCall,
-    endCall,
-    toggleMute,
-    handleIncomingCall,
-    handleCallAccepted,
-    handleCallRejected,
-    handleCallEnded,
-    handleIceCandidate,
-    handleUnavailable,
-  } = useWebRTC({
-    socket,
-    currentUserId: currentUser?.id ?? "",
-    currentUserName: currentUser?.displayName 
-      ?? currentUser?.username ?? "",
-    currentUserPic: currentUser?.profilePic ?? undefined,
-  });
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, typing]);
-
-  useEffect(() => {
-    if (!socket) return;
-
-    socket.on("call:incoming", handleIncomingCall);
-    socket.on("call:accepted", handleCallAccepted);
-    socket.on("call:rejected", handleCallRejected);
-    socket.on("call:ended", handleCallEnded);
-    socket.on("call:ice-candidate", handleIceCandidate);
-    socket.on("call:unavailable", handleUnavailable);
-
-    return () => {
-      socket.off("call:incoming", handleIncomingCall);
-      socket.off("call:accepted", handleCallAccepted);
-      socket.off("call:rejected", handleCallRejected);
-      socket.off("call:ended", handleCallEnded);
-      socket.off("call:ice-candidate", handleIceCandidate);
-      socket.off("call:unavailable", handleUnavailable);
-    };
-  }, [socket, handleIncomingCall, handleCallAccepted,
-      handleCallRejected, handleCallEnded, 
-      handleIceCandidate, handleUnavailable]);
 
   if (!selectedFriend) {
     return (
@@ -127,11 +106,14 @@ export function ChatWindow({
           </p>
         </div>
         <button
-          onClick={() => selectedFriend && startCall(
-            selectedFriend.id,
-            selectedFriend.displayName ?? selectedFriend.username,
-            selectedFriend.profilePic ?? undefined
-          )}
+          onClick={() =>
+            selectedFriend &&
+            onStartCall(
+              selectedFriend.id,
+              selectedFriend.displayName ?? selectedFriend.username,
+              selectedFriend.profilePic ?? undefined,
+            )
+          }
           disabled={callState !== "idle" || !selectedFriend}
           className="p-2 rounded-full hover:bg-gray-100 
           transition-colors disabled:opacity-40
@@ -172,28 +154,26 @@ export function ChatWindow({
         <MessageInput onSend={onSend} onTypingChange={onTypingChange} />
       </div>
 
-      {/* Incoming call popup */}
+      {/* Incoming call popup — driven by the single ProtectedShell WebRTC instance */}
       {callState === "incoming" && incomingCall && (
         <IncomingCallPopup
           callerName={remoteName}
           callerPic={remotePic}
-          onAccept={acceptCall}
-          onReject={rejectCall}
+          onAccept={onAcceptCall}
+          onReject={onRejectCall}
         />
       )}
 
-      {/* Active call screen */}
-      {(callState === "calling" || 
-        callState === "connected" || 
-        callState === "ended") && (
+      {/* Active call screen — driven by the single ProtectedShell WebRTC instance */}
+      {(callState === "calling" || callState === "connected" || callState === "ended") && (
         <ActiveCallScreen
           callState={callState}
           remoteName={remoteName}
           remotePic={remotePic}
           isMuted={isMuted}
           callDuration={callDuration}
-          onMute={toggleMute}
-          onEnd={endCall}
+          onMute={onToggleMute}
+          onEnd={onEndCall}
           remoteAudioRef={remoteAudioRef}
         />
       )}

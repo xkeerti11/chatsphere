@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
 import { ChatWindow } from "@/components/chat/ChatWindow";
 import { FriendSearch } from "@/components/friends/FriendSearch";
-import { ProtectedShell } from "@/components/layout/ProtectedShell";
+import { ProtectedShell, useCallContext } from "@/components/layout/ProtectedShell";
 import { Avatar } from "@/components/ui/Avatar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { apiClient } from "@/lib/client-api";
@@ -48,7 +48,7 @@ function writeUnreadMessageMap(unreadMap: UnreadMessageMap) {
   window.dispatchEvent(new CustomEvent(CHAT_UNREAD_EVENT, { detail: unreadMap }));
 }
 
-export function ChatWorkspace() {
+function ChatWorkspaceInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const friendParam = searchParams.get("friend");
@@ -58,6 +58,7 @@ export function ChatWorkspace() {
   const socket = useSocketStore((state) => state.socket);
   const isSocketConnected = useSocketStore((state) => state.isConnected);
   const onlineUserIds = useSocketStore((state) => state.onlineUserIds);
+  const callCtx = useCallContext();
   const friends = useChatStore((state) => state.friends);
   const setFriends = useChatStore((state) => state.setFriends);
   const messages = useChatStore((state) => state.messages);
@@ -474,6 +475,18 @@ export function ChatWorkspace() {
               onBack={handleBack}
               onSend={sendMessage}
               onTypingChange={handleTypingChange}
+              callState={callCtx.callState}
+              remoteName={callCtx.remoteName}
+              remotePic={callCtx.remotePic}
+              incomingCall={callCtx.incomingCall}
+              isMuted={callCtx.isMuted}
+              callDuration={callCtx.callDuration}
+              remoteAudioRef={callCtx.remoteAudioRef}
+              onStartCall={callCtx.startCall}
+              onAcceptCall={callCtx.acceptCall}
+              onRejectCall={callCtx.rejectCall}
+              onEndCall={callCtx.endCall}
+              onToggleMute={callCtx.toggleMute}
             />
           ) : (
             <div className="hidden flex-1 md:flex">
@@ -486,11 +499,31 @@ export function ChatWorkspace() {
                 onBack={handleBack}
                 onSend={sendMessage}
                 onTypingChange={handleTypingChange}
+                callState={callCtx.callState}
+                remoteName={callCtx.remoteName}
+                remotePic={callCtx.remotePic}
+                incomingCall={callCtx.incomingCall}
+                isMuted={callCtx.isMuted}
+                callDuration={callCtx.callDuration}
+                remoteAudioRef={callCtx.remoteAudioRef}
+                onStartCall={callCtx.startCall}
+                onAcceptCall={callCtx.acceptCall}
+                onRejectCall={callCtx.rejectCall}
+                onEndCall={callCtx.endCall}
+                onToggleMute={callCtx.toggleMute}
               />
             </div>
           )}
         </div>
       </div>
+    </ProtectedShell>
+  );
+}
+
+export function ChatWorkspace() {
+  return (
+    <ProtectedShell title="Chat">
+      <ChatWorkspaceInner />
     </ProtectedShell>
   );
 }
