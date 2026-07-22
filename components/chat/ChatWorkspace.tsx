@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import React, { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
 import { ChatWindow } from "@/components/chat/ChatWindow";
@@ -52,21 +52,21 @@ function ChatWorkspaceInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const friendParam = searchParams.get("friend");
-  const hydrated = useAuthStore((state) => state.hydrated);
-  const currentUser = useAuthStore((state) => state.user);
+  const hydrated = useAuthStore((state: ReturnType<typeof useAuthStore.getState>) => state.hydrated);
+  const currentUser = useAuthStore((state: ReturnType<typeof useAuthStore.getState>) => state.user);
   const currentUserId = currentUser?.id ?? null;
-  const socket = useSocketStore((state) => state.socket);
-  const isSocketConnected = useSocketStore((state) => state.isConnected);
-  const onlineUserIds = useSocketStore((state) => state.onlineUserIds);
+  const socket = useSocketStore((state: ReturnType<typeof useSocketStore.getState>) => state.socket);
+  const isSocketConnected = useSocketStore((state: ReturnType<typeof useSocketStore.getState>) => state.isConnected);
+  const onlineUserIds = useSocketStore((state: ReturnType<typeof useSocketStore.getState>) => state.onlineUserIds);
   const callCtx = useCallContext();
-  const friends = useChatStore((state) => state.friends);
-  const setFriends = useChatStore((state) => state.setFriends);
-  const messages = useChatStore((state) => state.messages);
-  const setMessages = useChatStore((state) => state.setMessages);
-  const addMessage = useChatStore((state) => state.addMessage);
-  const markMessagesRead = useChatStore((state) => state.markMessagesRead);
-  const selectedFriend = useChatStore((state) => state.selectedFriend);
-  const setSelectedFriend = useChatStore((state) => state.setSelectedFriend);
+  const friends = useChatStore((state: ReturnType<typeof useChatStore.getState>) => state.friends);
+  const setFriends = useChatStore((state: ReturnType<typeof useChatStore.getState>) => state.setFriends);
+  const messages = useChatStore((state: ReturnType<typeof useChatStore.getState>) => state.messages);
+  const setMessages = useChatStore((state: ReturnType<typeof useChatStore.getState>) => state.setMessages);
+  const addMessage = useChatStore((state: ReturnType<typeof useChatStore.getState>) => state.addMessage);
+  const markMessagesRead = useChatStore((state: ReturnType<typeof useChatStore.getState>) => state.markMessagesRead);
+  const selectedFriend = useChatStore((state: ReturnType<typeof useChatStore.getState>) => state.selectedFriend);
+  const setSelectedFriend = useChatStore((state: ReturnType<typeof useChatStore.getState>) => state.setSelectedFriend);
   const [typing, setTyping] = useState(false);
   const [unreadMap, setUnreadMap] = useState<UnreadMessageMap>(() => readUnreadMessageMap());
   const selectedFriendId = selectedFriend?.id ?? null;
@@ -74,7 +74,7 @@ function ChatWorkspaceInner() {
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearUnreadForFriend = useCallback((friendId: string) => {
-    setUnreadMap((prev) => {
+    setUnreadMap((prev: UnreadMessageMap) => {
       if (!prev[friendId]) return prev;
 
       const next = { ...prev };
@@ -128,7 +128,7 @@ function ChatWorkspaceInner() {
   useEffect(() => {
     if (!friendParam) return;
 
-    const chosen = friends.find((friend) => friend.id === friendParam);
+    const chosen = friends.find((friend: FriendListItem) => friend.id === friendParam);
 
     if (chosen && chosen.id !== selectedFriendId) {
       setSelectedFriend(chosen);
@@ -147,23 +147,23 @@ function ChatWorkspaceInner() {
       socket.emit("join", { userId: currentUserId });
     };
     const presenceSnapshotListener = ({ userIds }: { userIds: string[] }) => {
-      setFriends((currentFriends) =>
-        currentFriends.map((friend) => ({
+      setFriends((currentFriends: FriendListItem[]) =>
+        currentFriends.map((friend: FriendListItem) => ({
           ...friend,
           isOnline: userIds.includes(friend.id),
         })),
       );
     };
     const userOnlineListener = ({ userId }: { userId: string }) => {
-      setFriends((currentFriends) =>
-        currentFriends.map((friend) =>
+      setFriends((currentFriends: FriendListItem[]) =>
+        currentFriends.map((friend: FriendListItem) =>
           friend.id === userId ? { ...friend, isOnline: true } : friend,
         ),
       );
     };
     const userOfflineListener = ({ userId }: { userId: string }) => {
-      setFriends((currentFriends) =>
-        currentFriends.map((friend) =>
+      setFriends((currentFriends: FriendListItem[]) =>
+        currentFriends.map((friend: FriendListItem) =>
           friend.id === userId ? { ...friend, isOnline: false } : friend,
         ),
       );
@@ -362,113 +362,136 @@ function ChatWorkspaceInner() {
   }
 
   return (
-    <ProtectedShell title="Chat">
-      <div className="flex min-h-[calc(100vh-12rem)] flex-col gap-4 overflow-hidden md:flex-row">
-        <aside
-          className={cn(
-            "min-h-0 md:flex md:w-80 md:flex-shrink-0 md:flex-col",
-            selectedFriend ? "hidden md:flex" : "flex",
-          )}
-        >
-          <div className="flex min-h-0 flex-1 flex-col gap-4">
-            <div className="rounded-[1.5rem] bg-white p-3 sm:p-4">
-              <p className="font-display text-base font-semibold sm:text-lg">Discover</p>
-              <p className="mb-4 text-sm text-[var(--muted)] sm:text-base">
-                Search new people to add.
-              </p>
-              <FriendSearch />
-            </div>
-
-            <div className="flex min-h-[50vh] flex-1 flex-col rounded-[1.5rem] bg-white p-3 sm:p-4">
-              <p className="font-display text-base font-semibold sm:text-lg">Friends</p>
-              <p className="mb-4 text-sm text-[var(--muted)] sm:text-base">
-                Your active conversations list.
-              </p>
-              {friends.length === 0 ? (
-                <div className="flex flex-1 items-center justify-center">
-                  <EmptyState title="No chats yet" description="Add friends to start a conversation." />
-                </div>
-              ) : (
-                <div className="min-h-0 flex-1 overflow-y-auto">
-                  <div className="space-y-2 sm:space-y-3">
-                    {friends.map((friend) => {
-                      const isOnline = friend.isOnline || onlineUserIds.includes(friend.id);
-                      const unreadCount = unreadMap[friend.id] ?? 0;
-
-                      return (
-                        <button
-                          key={friend.id}
-                          className={cn(
-                            "relative flex min-h-[44px] w-full items-center gap-3 rounded-xl p-3 text-left transition-colors",
-                            selectedFriendId === friend.id
-                              ? "bg-[var(--brand-soft)]"
-                              : "bg-white hover:bg-gray-50",
-                          )}
-                          onClick={() => handleSelectFriend(friend)}
-                        >
-                          <div className="relative flex-shrink-0">
-                            <Avatar
-                              name={friend.displayName ?? friend.username}
-                              src={friend.profilePic}
-                              size="md"
-                              className="h-10 w-10 sm:h-12 sm:w-12"
-                            />
-                            {isOnline ? (
-                              <span className="absolute bottom-0 right-0 z-10 h-3 w-3 rounded-full border-2 border-white bg-green-500" />
-                            ) : null}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between gap-2">
-                              <p
-                                className={cn(
-                                  "truncate text-sm sm:text-base",
-                                  unreadCount > 0
-                                    ? "font-bold text-gray-900"
-                                    : "font-medium text-gray-700",
-                                )}
-                              >
-                                {friend.displayName ?? friend.username}
-                              </p>
-                              {unreadCount > 0 ? (
-                                <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-blue-500 px-1.5 text-xs font-medium text-white">
-                                  {unreadCount > 9 ? "9+" : unreadCount}
-                                </span>
-                              ) : (
-                                <span className="shrink-0 text-[10px] text-[var(--muted)] sm:text-xs">
-                                  {formatRelativeTime(friend.lastSeen)}
-                                </span>
-                              )}
-                            </div>
-                            <p className="mt-0.5 truncate text-xs">
-                              {isOnline ? (
-                                <span className="font-medium text-green-500">Online</span>
-                              ) : (
-                                <span className={unreadCount > 0 ? "font-medium text-blue-500" : "text-gray-400"}>
-                                  Offline
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden p-3 sm:p-4 md:flex-row lg:p-6">
+      <aside
+        className={cn(
+          "min-h-0 md:flex md:w-80 md:flex-shrink-0 md:flex-col",
+          selectedFriend ? "hidden md:flex" : "flex",
+        )}
+      >
+        <div className="flex min-h-0 flex-1 flex-col gap-4">
+          <div className="rounded-[1.5rem] bg-white p-3 sm:p-4">
+            <p className="font-display text-base font-semibold sm:text-lg">Discover</p>
+            <p className="mb-4 text-sm text-[var(--muted)] sm:text-base">
+              Search new people to add.
+            </p>
+            <FriendSearch />
           </div>
-        </aside>
 
-        <div
-          className={cn(
-            "min-h-[65vh] min-w-0 flex-1",
-            selectedFriend ? "flex" : "hidden md:flex",
-          )}
-        >
-          {selectedFriend ? (
+          <div className="flex min-h-0 flex-1 flex-col rounded-[1.5rem] bg-white p-3 sm:p-4">
+            <p className="font-display text-base font-semibold sm:text-lg">Friends</p>
+            <p className="mb-4 text-sm text-[var(--muted)] sm:text-base">
+              Your active conversations list.
+            </p>
+            {friends.length === 0 ? (
+              <div className="flex flex-1 items-center justify-center">
+                <EmptyState title="No chats yet" description="Add friends to start a conversation." />
+              </div>
+            ) : (
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <div className="space-y-2 sm:space-y-3">
+                  {friends.map((friend) => {
+                    const isOnline = friend.isOnline || onlineUserIds.includes(friend.id);
+                    const unreadCount = unreadMap[friend.id] ?? 0;
+
+                    return (
+                      <button
+                        key={friend.id}
+                        className={cn(
+                          "relative flex min-h-[44px] w-full items-center gap-3 rounded-xl p-3 text-left transition-colors",
+                          selectedFriendId === friend.id
+                            ? "bg-[var(--brand-soft)]"
+                            : "bg-white hover:bg-gray-50",
+                        )}
+                        onClick={() => handleSelectFriend(friend)}
+                      >
+                        <div className="relative flex-shrink-0">
+                          <Avatar
+                            name={friend.displayName ?? friend.username}
+                            src={friend.profilePic}
+                            size="md"
+                            className="h-10 w-10 sm:h-12 sm:w-12"
+                          />
+                          {isOnline ? (
+                            <span className="absolute bottom-0 right-0 z-10 h-3 w-3 rounded-full border-2 border-white bg-green-500" />
+                          ) : null}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p
+                              className={cn(
+                                "truncate text-sm sm:text-base",
+                                unreadCount > 0
+                                  ? "font-bold text-gray-900"
+                                  : "font-medium text-gray-700",
+                              )}
+                            >
+                              {friend.displayName ?? friend.username}
+                            </p>
+                            {unreadCount > 0 ? (
+                              <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-blue-500 px-1.5 text-xs font-medium text-white">
+                                {unreadCount > 9 ? "9+" : unreadCount}
+                              </span>
+                            ) : (
+                              <span className="shrink-0 text-[10px] text-[var(--muted)] sm:text-xs">
+                                {formatRelativeTime(friend.lastSeen)}
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-0.5 truncate text-xs">
+                            {isOnline ? (
+                              <span className="font-medium text-green-500">Online</span>
+                            ) : (
+                              <span className={unreadCount > 0 ? "font-medium text-blue-500" : "text-gray-400"}>
+                                Offline
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </aside>
+
+      <div
+        className={cn(
+          "min-h-0 min-w-0 flex-1",
+          selectedFriend ? "flex" : "hidden md:flex",
+        )}
+      >
+        {selectedFriend ? (
+          <ChatWindow
+            currentUserId={currentUser?.id ?? ""}
+            selectedFriend={selectedFriend}
+            onlineUserIds={onlineUserIds}
+            messages={messages}
+            typing={typing}
+            onBack={handleBack}
+            onSend={sendMessage}
+            onTypingChange={handleTypingChange}
+            callState={callCtx.callState}
+            remoteName={callCtx.remoteName}
+            remotePic={callCtx.remotePic}
+            incomingCall={callCtx.incomingCall}
+            isMuted={callCtx.isMuted}
+            callDuration={callCtx.callDuration}
+            remoteAudioRef={callCtx.remoteAudioRef}
+            onStartCall={callCtx.startCall}
+            onAcceptCall={callCtx.acceptCall}
+            onRejectCall={callCtx.rejectCall}
+            onEndCall={callCtx.endCall}
+            onToggleMute={callCtx.toggleMute}
+          />
+        ) : (
+          <div className="hidden flex-1 md:flex">
             <ChatWindow
               currentUserId={currentUser?.id ?? ""}
-              selectedFriend={selectedFriend}
+              selectedFriend={null}
               onlineUserIds={onlineUserIds}
               messages={messages}
               typing={typing}
@@ -488,35 +511,10 @@ function ChatWorkspaceInner() {
               onEndCall={callCtx.endCall}
               onToggleMute={callCtx.toggleMute}
             />
-          ) : (
-            <div className="hidden flex-1 md:flex">
-              <ChatWindow
-                currentUserId={currentUser?.id ?? ""}
-                selectedFriend={null}
-                onlineUserIds={onlineUserIds}
-                messages={messages}
-                typing={typing}
-                onBack={handleBack}
-                onSend={sendMessage}
-                onTypingChange={handleTypingChange}
-                callState={callCtx.callState}
-                remoteName={callCtx.remoteName}
-                remotePic={callCtx.remotePic}
-                incomingCall={callCtx.incomingCall}
-                isMuted={callCtx.isMuted}
-                callDuration={callCtx.callDuration}
-                remoteAudioRef={callCtx.remoteAudioRef}
-                onStartCall={callCtx.startCall}
-                onAcceptCall={callCtx.acceptCall}
-                onRejectCall={callCtx.rejectCall}
-                onEndCall={callCtx.endCall}
-                onToggleMute={callCtx.toggleMute}
-              />
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
-    </ProtectedShell>
+    </div>
   );
 }
 

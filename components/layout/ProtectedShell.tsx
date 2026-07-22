@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Bell, Home, LogOut, MessageCircle, Settings, Sparkles } from "lucide-react";
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -142,11 +142,11 @@ export function ProtectedShell({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const hydrated = useAuthStore((state) => state.hydrated);
-  const user = useAuthStore((state) => state.user);
-  const logout = useAuthStore((state) => state.logout);
-  const socket = useSocketStore((state) => state.socket);
-  const initSocket = useSocketStore((state) => state.initSocket);
+  const hydrated = useAuthStore((state: ReturnType<typeof useAuthStore.getState>) => state.hydrated);
+  const user = useAuthStore((state: ReturnType<typeof useAuthStore.getState>) => state.user);
+  const logout = useAuthStore((state: ReturnType<typeof useAuthStore.getState>) => state.logout);
+  const socket = useSocketStore((state: ReturnType<typeof useSocketStore.getState>) => state.socket);
+  const initSocket = useSocketStore((state: ReturnType<typeof useSocketStore.getState>) => state.initSocket);
 
   // ── Single WebRTC instance ──────────────────────────────────────────────────
   const {
@@ -218,8 +218,8 @@ export function ProtectedShell({
     }
 
     const handleNotification = (notification: AppNotification) => {
-      setNotifications((prev) => [notification, ...prev].slice(0, 20));
-      setUnreadCount((prev) => prev + 1);
+      setNotifications((prev: AppNotification[]) => [notification, ...prev].slice(0, 20));
+      setUnreadCount((prev: number) => prev + 1);
 
       if ((notification.type as string) === "friend_request") {
         toast(`${notification.fromUsername} sent you a friend request`, {
@@ -234,7 +234,7 @@ export function ProtectedShell({
       const activeFriendId = getActiveChatFriendId();
 
       if (!isOnChatPage || activeFriendId !== message.senderId) {
-        setUnreadMap((prev) => {
+        setUnreadMap((prev: UnreadMessageMap) => {
           const next = {
             ...prev,
             [message.senderId]: (prev[message.senderId] ?? 0) + 1,
@@ -243,7 +243,7 @@ export function ProtectedShell({
           writeUnreadMessageMap(next);
           return next;
         });
-        setTotalUnreadMessages((prev) => prev + 1);
+        setTotalUnreadMessages((prev: number) => prev + 1);
       }
     };
 
@@ -516,7 +516,7 @@ export function ProtectedShell({
             {notifications.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-gray-400">No notifications yet</div>
             ) : (
-              notifications.map((notif, index) => (
+              notifications.map((notif: AppNotification, index: number) => (
                 <div
                   key={`${notif.timestamp}-${notif.fromUserId}-${index}`}
                   onClick={() => {

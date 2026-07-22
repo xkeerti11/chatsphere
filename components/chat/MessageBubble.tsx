@@ -11,6 +11,7 @@ export function MessageBubble({
 }: {
   message: MessageDto;
   currentUserId: string;
+  key?: React.Key;
 }) {
   const own = message.senderId === currentUserId;
   const imageUrl = message.fileType === "image" ? (message.fileUrl ?? undefined) : undefined;
